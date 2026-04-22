@@ -1,0 +1,64 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthUser } from '../../common/decorators/current-user.decorator';
+import {
+  BookingDecisionDto,
+  BookingQueryDto,
+  CompletionRequestDto,
+  CreateBookingDto,
+} from './dto/bookings.dto';
+import { BookingsService } from './bookings.service';
+@ApiTags('bookings')
+@ApiBearerAuth()
+@Controller('bookings')
+export class BookingsController {
+  constructor(private readonly bookingsService: BookingsService) {}
+  @Roles('BUYER') @Post() create(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateBookingDto,
+  ) {
+    return this.bookingsService.create(user.sub, dto);
+  }
+  @Get() list(@CurrentUser() user: AuthUser, @Query() dto: BookingQueryDto) {
+    return this.bookingsService.listForUser(user.sub, user.role, dto);
+  }
+  @Get(':id') detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.bookingsService.detail(user.sub, user.role, id);
+  }
+  @Roles('GROOMER') @Patch(':id/accept') accept(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.bookingsService.accept(user.sub, id);
+  }
+  @Roles('GROOMER') @Patch(':id/reject') reject(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: BookingDecisionDto,
+  ) {
+    return this.bookingsService.reject(user.sub, id, dto);
+  }
+  @Roles('GROOMER') @Patch(':id/request-completion') requestCompletion(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CompletionRequestDto,
+  ) {
+    return this.bookingsService.requestCompletion(user.sub, id, dto);
+  }
+  @Roles('BUYER') @Patch(':id/approve-completion') approveCompletion(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.bookingsService.approveCompletion(user.sub, id);
+  }
+}

@@ -1,0 +1,543 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  BUYER
+  GROOMER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING_EMAIL_VERIFICATION
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum GroomerApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IdType {
+  PASSPORT
+  DRIVING_LICENSE
+}
+
+enum BookingStatus {
+  PAYMENT_PENDING
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  IN_PROGRESS
+  COMPLETION_REQUESTED
+  COMPLETED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  REQUIRES_ACTION
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+enum ReviewTargetType {
+  GROOMER
+  BUYER
+}
+
+enum NotificationType {
+  BOOKING_CREATED
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  COMPLETION_REQUESTED
+  BOOKING_COMPLETED
+  PAYMENT_SUCCESS
+  PAYMENT_REFUND
+  NEW_MESSAGE
+  TICKET_REPLY
+  ADMIN_ACTION
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketSenderType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum PetType {
+  DOG
+  CAT
+  RABBIT
+  OTHER
+}
+
+enum PetSize {
+  SMALL
+  MEDIUM
+  LARGE
+  EXTRA_LARGE
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+}
+
+model User {
+  id                     String                 @id @default(uuid())
+  fullName               String
+  phone                  String?
+  email                  String                 @unique
+  password               String
+  profileImage           String?
+  locationText           String?
+  state                  String?
+  role                   UserRole
+  emailVerified          Boolean                @default(false)
+  status                 UserStatus             @default(PENDING_EMAIL_VERIFICATION)
+  isBlocked              Boolean                @default(false)
+  refreshTokenHash       String?
+  passwordResetTokenHash String?
+  passwordResetExpiresAt DateTime?
+  buyerProfile           BuyerProfile?
+  groomerProfile         GroomerProfile?
+  pets                   Pet[]                  @relation("BuyerPets")
+  favoriteGroomers       BuyerFavoriteGroomer[] @relation("BuyerFavorites")
+  bookingsAsBuyer        Booking[]              @relation("BuyerBookings")
+  bookingsAsGroomer      Booking[]              @relation("GroomerBookings")
+  reviewsWritten         Review[]               @relation("ReviewsWritten")
+  reviewsReceived        Review[]               @relation("ReviewsReceived")
+  chatMessages           ChatMessage[]          @relation("MessageSender")
+  notifications          Notification[]
+  tickets                SupportTicket[]        @relation("TicketRequester")
+  ticketMessages         SupportTicketMessage[] @relation("TicketMessageSender")
+  adminActionLogs        AdminActionLog[]        @relation("AdminActor")
+  targetActionLogs       AdminActionLog[]        @relation("AdminTarget")
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  @@index([role, status])
+  @@index([state])
+  @@index([isBlocked])
+}
+
+model BuyerProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GroomerProfile {
+  id                     String                 @id @default(uuid())
+  userId                 String                 @unique
+  user                   User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceYears        Int
+  legalFullName          String
+  idNumber               String
+  idType                 IdType
+  businessName           String
+  serviceArea            String
+  businessAddress        String
+  idFrontImage           String
+  idBackImage            String
+  shortBio               String?
+  about                  String?
+  certifications         String[]               @default([])
+  availableForBookings   Boolean                @default(false)
+  approvalStatus         GroomerApprovalStatus  @default(PENDING)
+  rejectionReason        String?
+  approvedAt             DateTime?
+  approvedById           String?
+  services               Service[]
+  addons                 ServiceAddon[]
+  availability           GroomerAvailability[]
+  favorites              BuyerFavoriteGroomer[] @relation("GroomerFavorites")
+  paymentMethods         GroomerPaymentMethod[]
+  payouts                Payout[]
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  @@index([approvalStatus, availableForBookings])
+}
+
+model ServiceCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  imageUrl    String?
+  active      Boolean   @default(true)
+  services    Service[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Service {
+  id              String                 @id @default(uuid())
+  groomerId       String
+  groomer         GroomerProfile         @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        ServiceCategory        @relation(fields: [categoryId], references: [id])
+  title           String
+  description     String
+  durationMinutes Int
+  price           Decimal                @db.Decimal(10, 2)
+  active          Boolean                @default(true)
+  addonMappings   ServiceAddonMapping[]
+  bookingServices BookingService[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([groomerId, active])
+  @@index([categoryId])
+}
+
+model ServiceAddon {
+  id              String                 @id @default(uuid())
+  groomerId       String
+  groomer         GroomerProfile         @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  title           String
+  description     String?
+  price           Decimal                @db.Decimal(10, 2)
+  durationMinutes Int
+  active          Boolean                @default(true)
+  serviceMappings ServiceAddonMapping[]
+  bookingAddons   BookingAddon[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([groomerId, active])
+}
+
+model ServiceAddonMapping {
+  id        String       @id @default(uuid())
+  serviceId String
+  addonId   String
+  service   Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  addon     ServiceAddon @relation(fields: [addonId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@unique([serviceId, addonId])
+}
+
+model GroomerAvailability {
+  id          String                    @id @default(uuid())
+  groomerId   String
+  groomer     GroomerProfile            @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  date        DateTime                  @db.Date
+  isAvailable Boolean                   @default(true)
+  slots       GroomerAvailabilitySlot[]
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@unique([groomerId, date])
+  @@index([date, isAvailable])
+}
+
+model GroomerAvailabilitySlot {
+  id             String               @id @default(uuid())
+  availabilityId String
+  availability   GroomerAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  startTime      DateTime
+  endTime        DateTime
+  isBooked       Boolean              @default(false)
+  booking        Booking?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([availabilityId, startTime, endTime])
+  @@index([startTime, isBooked])
+}
+
+model BuyerFavoriteGroomer {
+  id        String         @id @default(uuid())
+  buyerId   String
+  groomerId String
+  buyer     User           @relation("BuyerFavorites", fields: [buyerId], references: [id], onDelete: Cascade)
+  groomer   GroomerProfile @relation("GroomerFavorites", fields: [groomerId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([buyerId, groomerId])
+}
+
+model Pet {
+  id          String   @id @default(uuid())
+  buyerId     String
+  buyer       User     @relation("BuyerPets", fields: [buyerId], references: [id], onDelete: Cascade)
+  name        String
+  breed       String?
+  age         Int?
+  temperament String?
+  petType     PetType
+  petSize     PetSize
+  bookings    Booking[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([buyerId])
+}
+
+model Booking {
+  id                     String                    @id @default(uuid())
+  bookingNumber          String                    @unique
+  buyerId                String
+  groomerId              String
+  petId                  String
+  availabilitySlotId     String?                   @unique
+  buyer                  User                      @relation("BuyerBookings", fields: [buyerId], references: [id])
+  groomer                User                      @relation("GroomerBookings", fields: [groomerId], references: [id])
+  pet                    Pet                       @relation(fields: [petId], references: [id])
+  availabilitySlot       GroomerAvailabilitySlot?  @relation(fields: [availabilitySlotId], references: [id])
+  serviceLocation        String
+  addressLine            String
+  state                  String?
+  city                   String?
+  postalCode             String?
+  note                   String?
+  status                 BookingStatus             @default(PAYMENT_PENDING)
+  subtotalAmount         Decimal                   @db.Decimal(10, 2)
+  platformFeeAmount      Decimal                   @db.Decimal(10, 2)
+  groomerEarningAmount   Decimal                   @db.Decimal(10, 2)
+  totalAmount            Decimal                   @db.Decimal(10, 2)
+  requestedAt            DateTime?
+  acceptedAt             DateTime?
+  rejectedAt             DateTime?
+  cancelledAt            DateTime?
+  inProgressAt           DateTime?
+  completionRequestedAt  DateTime?
+  completedAt            DateTime?
+  refundedAt             DateTime?
+  rejectionReason        String?
+  cancellationReason     String?
+  completionNote         String?
+  services               BookingService[]
+  addons                 BookingAddon[]
+  payments               Payment[]
+  payouts                Payout[]
+  reviews                Review[]
+  conversations          ChatConversation[]
+  supportTickets         SupportTicket[]
+  createdAt              DateTime                  @default(now())
+  updatedAt              DateTime                  @updatedAt
+
+  @@index([buyerId, status])
+  @@index([groomerId, status])
+  @@index([createdAt])
+}
+
+model BookingService {
+  id                 String   @id @default(uuid())
+  bookingId          String
+  serviceId          String?
+  booking            Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  service            Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  serviceTitle       String
+  serviceDescription String?
+  durationMinutes    Int
+  price              Decimal  @db.Decimal(10, 2)
+  categoryName       String?
+  createdAt          DateTime @default(now())
+}
+
+model BookingAddon {
+  id              String        @id @default(uuid())
+  bookingId       String
+  addonId         String?
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addon           ServiceAddon? @relation(fields: [addonId], references: [id], onDelete: SetNull)
+  addonTitle      String
+  addonDescription String?
+  durationMinutes Int
+  price           Decimal       @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  bookingId             String
+  booking               Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @default("usd")
+  status                PaymentStatus @default(PENDING)
+  stripeCheckoutSessionId String?     @unique
+  stripePaymentIntentId String?       @unique
+  stripeRefundId        String?
+  failureReason         String?
+  paidAt                DateTime?
+  refundedAt            DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([bookingId, status])
+}
+
+model GroomerPaymentMethod {
+  id                       String         @id @default(uuid())
+  groomerId                String
+  groomer                  GroomerProfile @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  stripeAccountId          String?
+  stripeExternalAccountId  String?
+  displayName              String
+  isDefault                Boolean        @default(false)
+  payoutsEnabled           Boolean        @default(false)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+
+  @@index([groomerId, isDefault])
+}
+
+model Payout {
+  id               String         @id @default(uuid())
+  bookingId        String
+  groomerId        String
+  booking          Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  groomer          GroomerProfile @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  amount           Decimal        @db.Decimal(10, 2)
+  platformFee      Decimal        @db.Decimal(10, 2)
+  currency         String         @default("usd")
+  status           PayoutStatus   @default(PENDING)
+  stripeTransferId String?
+  failureReason    String?
+  releasedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([groomerId, status])
+  @@index([bookingId])
+}
+
+model Review {
+  id         String           @id @default(uuid())
+  bookingId  String
+  reviewerId String
+  revieweeId String
+  targetType ReviewTargetType
+  rating     Int
+  feedback   String?
+  booking    Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  reviewer   User             @relation("ReviewsWritten", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewee   User             @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([bookingId, reviewerId, targetType])
+  @@index([revieweeId, targetType])
+}
+
+model ChatConversation {
+  id        String        @id @default(uuid())
+  buyerId   String
+  groomerId String
+  bookingId String?
+  booking   Booking?      @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([buyerId, groomerId, bookingId])
+  @@index([buyerId])
+  @@index([groomerId])
+}
+
+model ChatMessage {
+  id             String           @id @default(uuid())
+  conversationId String
+  senderId       String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User             @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  type           MessageType      @default(TEXT)
+  body           String?
+  attachmentUrl  String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String?
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+}
+
+model SupportTicket {
+  id               String                 @id @default(uuid())
+  requesterId      String
+  relatedBookingId String?
+  requester        User                   @relation("TicketRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  relatedBooking   Booking?               @relation(fields: [relatedBookingId], references: [id], onDelete: SetNull)
+  subject          String
+  status           TicketStatus           @default(OPEN)
+  messages         SupportTicketMessage[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  resolvedAt       DateTime?
+
+  @@index([requesterId, status])
+  @@index([status, createdAt])
+}
+
+model SupportTicketMessage {
+  id          String           @id @default(uuid())
+  ticketId    String
+  senderId    String?
+  ticket      SupportTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender      User?            @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  senderType  TicketSenderType
+  message     String
+  createdAt   DateTime         @default(now())
+}
+
+model AdminActionLog {
+  id           String   @id @default(uuid())
+  adminId      String
+  targetUserId String?
+  admin        User     @relation("AdminActor", fields: [adminId], references: [id], onDelete: Cascade)
+  targetUser   User?    @relation("AdminTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+  action       String
+  note         String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetUserId])
+}
