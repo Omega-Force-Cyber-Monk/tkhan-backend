@@ -32,6 +32,7 @@ export class AuthService {
   async registerBuyer(dto: RegisterBuyerDto) {
     await this.ensureEmailFree(dto.email);
     const password = await this.hash(dto.password);
+    const emailVerificationToken = randomBytes(32).toString('hex');
     const user = await this.prisma.user.create({
       data: {
         fullName: dto.fullName,
@@ -42,6 +43,8 @@ export class AuthService {
         state: dto.state,
         role: 'BUYER',
         status: 'PENDING_EMAIL_VERIFICATION',
+        emailVerificationToken: await this.hash(emailVerificationToken),
+        emailVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         buyerProfile: { create: {} },
       },
       include: { buyerProfile: true },
@@ -50,6 +53,7 @@ export class AuthService {
       user: sanitizeUser(user),
       message:
         'Buyer registered. Verify email before using protected buyer flows.',
+      emailVerificationToken,
     };
   }
 
@@ -77,6 +81,7 @@ export class AuthService {
             businessAddress: dto.businessAddress,
             idFrontImage: dto.idFrontImage,
             idBackImage: dto.idBackImage,
+            selfieWithId: dto.selfieWithId,
             approvalStatus: 'PENDING',
           },
         },
@@ -207,19 +212,34 @@ export class AuthService {
   }
 
   async verifyEmail(dto: VerifyEmailDto) {
-    // Token storage for email verification should be swapped to a dedicated token table when email delivery is enabled.
-    const user = dto.email
-      ? await this.prisma.user.findUnique({
-          where: { email: dto.email.toLowerCase() },
-        })
-      : null;
-    if (!user || user.role !== 'BUYER')
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email?.toLowerCase() || '' },
+    });
+    if (!user || user.role !== 'BUYER') {
       throw new BadRequestException('Invalid email verification request');
+    }
+    if (!user.emailVerificationToken) {
+      throw new BadRequestException('Email already verified');
+    }
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt < new Date()
+    ) {
+      throw new BadRequestException('Email verification token expired');
+    }
+    if (!(await bcrypt.compare(dto.token, user.emailVerificationToken))) {
+      throw new BadRequestException('Invalid email verification token');
+    }
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { emailVerified: true, status: 'ACTIVE' },
+      data: {
+        emailVerified: true,
+        status: 'ACTIVE',
+        emailVerificationToken: null,
+        emailVerificationExpiresAt: null,
+      },
     });
-    return { message: 'Email verified' };
+    return { message: 'Email verified successfully' };
   }
 
   private async ensureEmailFree(email: string) {

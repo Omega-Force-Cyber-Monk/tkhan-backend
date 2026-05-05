@@ -13,6 +13,7 @@ import {
   BookingQueryDto,
   CompletionRequestDto,
   CreateBookingDto,
+  UploadBookingImagesDto,
 } from './dto/bookings.dto';
 
 @Injectable()
@@ -270,5 +271,30 @@ export class BookingsService {
     );
     await this.payouts.releaseForBooking(id);
     return updated;
+  }
+
+  async uploadImages(
+    groomerId: string,
+    id: string,
+    dto: UploadBookingImagesDto,
+  ) {
+    const booking = await this.prisma.booking.findUniqueOrThrow({
+      where: { id },
+    });
+    if (booking.groomerId !== groomerId)
+      throw new ForbiddenException('Booking belongs to another groomer');
+    if (booking.status !== 'IN_PROGRESS')
+      throw new BadRequestException(
+        'Images can only be uploaded when booking is in progress',
+      );
+    if (!dto.beforeImage && !dto.afterImage)
+      throw new BadRequestException('At least one image must be provided');
+    const updateData: any = {};
+    if (dto.beforeImage) updateData.beforeImage = dto.beforeImage;
+    if (dto.afterImage) updateData.afterImage = dto.afterImage;
+    return this.prisma.booking.update({
+      where: { id },
+      data: updateData,
+    });
   }
 }

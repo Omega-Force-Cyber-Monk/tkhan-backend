@@ -45,6 +45,14 @@ export class RegisterGroomerDto extends RegisterBuyerDto {
   @ApiProperty({ example: 'https://cdn.example.com/id-back.jpg' })
   @IsString()
   idBackImage: string;
+  @ApiPropertyOptional({
+    example: 'https://cdn.example.com/selfie-with-id.jpg',
+    description:
+      'Selfie with ID image - the user should be visible with their ID in the frame',
+  })
+  @IsOptional()
+  @IsString()
+  selfieWithId?: string;
 }
 
 export class LoginDto {

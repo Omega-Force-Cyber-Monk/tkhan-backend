@@ -124,6 +124,8 @@ model User {
   state                  String?
   role                   UserRole
   emailVerified          Boolean                @default(false)
+  emailVerificationToken String?
+  emailVerificationExpiresAt DateTime?
   status                 UserStatus             @default(PENDING_EMAIL_VERIFICATION)
   isBlocked              Boolean                @default(false)
   refreshTokenHash       String?
@@ -172,6 +174,7 @@ model GroomerProfile {
   businessAddress        String
   idFrontImage           String
   idBackImage            String
+  selfieWithId           String?
   shortBio               String?
   about                  String?
   certifications         String[]               @default([])
@@ -341,6 +344,8 @@ model Booking {
   rejectionReason        String?
   cancellationReason     String?
   completionNote         String?
+  beforeImage            String?
+  afterImage             String?
   services               BookingService[]
   addons                 BookingAddon[]
   payments               Payment[]

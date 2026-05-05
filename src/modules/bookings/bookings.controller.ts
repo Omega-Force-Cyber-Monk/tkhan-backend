@@ -16,6 +16,7 @@ import {
   BookingQueryDto,
   CompletionRequestDto,
   CreateBookingDto,
+  UploadBookingImagesDto,
 } from './dto/bookings.dto';
 import { BookingsService } from './bookings.service';
 @ApiTags('bookings')
@@ -60,5 +61,12 @@ export class BookingsController {
     @Param('id') id: string,
   ) {
     return this.bookingsService.approveCompletion(user.sub, id);
+  }
+  @Roles('GROOMER') @Patch(':id/images') uploadImages(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UploadBookingImagesDto,
+  ) {
+    return this.bookingsService.uploadImages(user.sub, id, dto);
   }
 }

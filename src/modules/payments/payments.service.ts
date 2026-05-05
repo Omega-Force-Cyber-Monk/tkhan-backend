@@ -77,14 +77,14 @@ export class PaymentsService {
       throw new BadRequestException('Invalid Stripe signature');
     }
     if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as any;
+      const session = event.data.object;
       await this.markPaymentSucceeded(
         String(session.metadata?.paymentId),
         String(session.payment_intent),
       );
     }
     if (event.type === 'payment_intent.payment_failed') {
-      const intent = event.data.object as any;
+      const intent = event.data.object;
       await this.prisma.payment.updateMany({
         where: { stripePaymentIntentId: intent.id },
         data: {
