@@ -18,9 +18,7 @@ Production-oriented NestJS backend for a buyer/groomer service marketplace.
 cp .env.example .env
 docker compose up -d
 npm install
-npx prisma generate
-npx prisma migrate dev --name init
-npm run seed
+npm run db:setup
 npm run start:dev
 ```
 
@@ -28,8 +26,36 @@ The API runs at `http://localhost:3000/api/v1`; Swagger is at `http://localhost:
 
 Seeded admin:
 
-- email: `admin@tkhan.local`
-- password: `Admin@123456`
+- email: `ADMIN_EMAIL` from `.env`, default `admin@tkhan.local`
+- password: `ADMIN_PASSWORD` from `.env`, default `Admin@123456`
+
+The seed is safe to run more than once. It creates or repairs the configured
+admin as an active, verified, unblocked `ADMIN` user and also seeds service
+categories. By default it also keeps the legacy demo admin
+`admin@gmail.com` / `123456`; set `SEED_LEGACY_ADMIN=false` to skip that
+account.
+
+## Render Deploy
+
+Set these environment variables in Render:
+
+- `DATABASE_URL`
+- `JWT_ACCESS_SECRET`
+- `JWT_REFRESH_SECRET`
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD`
+
+Use this build command:
+
+```bash
+npm install && npm run render:build
+```
+
+Use this start command:
+
+```bash
+npm run start:prod
+```
 
 ## Core Flow
 
