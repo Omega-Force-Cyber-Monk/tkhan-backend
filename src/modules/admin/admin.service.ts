@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
+import { CreateAdminDto } from './dto/admin.dto';
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
@@ -73,5 +75,36 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: { admin: true, targetUser: true },
     });
+  }
+  async createAdmin(createdById: string, dto: CreateAdminDto) {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email.toLowerCase() },
+    });
+    if (existingUser) {
+      throw new BadRequestException('Email already in use');
+    }
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const admin = await this.prisma.user.create({
+      data: {
+        fullName: dto.fullName,
+        email: dto.email.toLowerCase(),
+        phone: dto.phone,
+        password: hashedPassword,
+        locationText: dto.locationText,
+        state: dto.state,
+        role: 'ADMIN',
+        status: 'ACTIVE',
+        emailVerified: true,
+      },
+    });
+    await this.prisma.adminActionLog.create({
+      data: {
+        adminId: createdById,
+        targetUserId: admin.id,
+        action: 'ADMIN_CREATED',
+      },
+    });
+    const { password, ...adminWithoutPassword } = admin;
+    return adminWithoutPassword;
   }
 }
