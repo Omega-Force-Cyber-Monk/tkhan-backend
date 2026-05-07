@@ -21,6 +21,23 @@ async function main() {
     },
   });
 
+  const adminRoyPassword = await bcrypt.hash('123456', 12);
+  await prisma.user.upsert({
+    where: { email: 'admin@gmail.com' },
+    update: {},
+    create: {
+      fullName: 'Admin Roy Chowdhury',
+      email: 'admin@gmail.com',
+      phone: '0123456789',
+      password: adminRoyPassword,
+      locationText: 'dhaka',
+      state: 'dhaka',
+      role: 'ADMIN',
+      emailVerified: true,
+      status: 'ACTIVE',
+    },
+  });
+
   for (const category of [
     { name: 'Bath & Brush', description: 'Bathing, brushing, and coat refresh services.' },
     { name: 'Full Grooming', description: 'Complete grooming packages for pets.' },
