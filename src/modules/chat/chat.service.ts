@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SendMessageDto, StartConversationDto } from './dto/chat.dto';
@@ -41,6 +45,9 @@ export class ChatService {
       userId,
       dto.conversationId,
     );
+    if ((dto.type === 'IMAGE' || dto.type === 'FILE') && !dto.attachmentUrl) {
+      throw new BadRequestException('Attachment file is required');
+    }
     const message = await this.prisma.chatMessage.create({
       data: {
         conversationId: dto.conversationId,

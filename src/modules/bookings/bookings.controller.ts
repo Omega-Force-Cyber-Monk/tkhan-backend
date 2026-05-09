@@ -10,7 +10,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -72,6 +72,15 @@ export class BookingsController {
   @Roles('GROOMER')
   @Patch(':id/images')
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        beforeImage: { type: 'string', format: 'binary' },
+        afterImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'beforeImage', maxCount: 1 },
@@ -88,16 +97,14 @@ export class BookingsController {
       afterImage?: Express.Multer.File[];
     },
   ) {
-    dto.beforeImage =
-      (await this.uploads.uploadImage(
-        files?.beforeImage?.[0],
-        'tkhan/bookings',
-      )) ?? dto.beforeImage;
-    dto.afterImage =
-      (await this.uploads.uploadImage(
-        files?.afterImage?.[0],
-        'tkhan/bookings',
-      )) ?? dto.afterImage;
+    dto.beforeImage = await this.uploads.uploadImage(
+      files?.beforeImage?.[0],
+      'tkhan/bookings',
+    );
+    dto.afterImage = await this.uploads.uploadImage(
+      files?.afterImage?.[0],
+      'tkhan/bookings',
+    );
     return this.bookingsService.uploadImages(user.sub, id, dto);
   }
 }

@@ -19,7 +19,7 @@ export class UserFilterDto extends PaginationDto {
 export class UpdateProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() fullName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() profileImage?: string;
+  profileImage?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() locationText?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() state?: string;
 }

@@ -9,7 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { UploadsService } from '../uploads/uploads.service';
@@ -40,15 +40,28 @@ export class ChatController {
   }
   @Post('messages')
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['conversationId', 'type'],
+      properties: {
+        conversationId: { type: 'string' },
+        type: { type: 'string', enum: ['TEXT', 'IMAGE', 'FILE'] },
+        body: { type: 'string' },
+        attachment: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(FileInterceptor('attachment'))
   async send(
     @CurrentUser() user: AuthUser,
     @Body() dto: SendMessageDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    dto.attachmentUrl =
-      (await this.uploads.uploadFile(file, 'tkhan/chat-attachments')) ??
-      dto.attachmentUrl;
+    dto.attachmentUrl = await this.uploads.uploadFile(
+      file,
+      'tkhan/chat-attachments',
+    );
     return this.chatService.send(user.sub, dto);
   }
   @Patch('conversations/:id/read') markRead(

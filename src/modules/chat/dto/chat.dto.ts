@@ -10,5 +10,5 @@ export class SendMessageDto {
   @IsEnum(['TEXT', 'IMAGE', 'FILE'])
   type: 'TEXT' | 'IMAGE' | 'FILE';
   @ApiPropertyOptional() @IsOptional() @IsString() body?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() attachmentUrl?: string;
+  attachmentUrl?: string;
 }

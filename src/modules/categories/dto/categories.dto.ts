@@ -8,7 +8,7 @@ export class CategoryQueryDto extends PaginationDto {
 export class CreateCategoryDto {
   @ApiProperty({ example: 'Full Grooming' }) @IsString() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() imageUrl?: string;
+  imageUrl?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
 export class UpdateCategoryDto extends CreateCategoryDto {}

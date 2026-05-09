@@ -27,20 +27,6 @@ export class CompletionRequestDto {
   @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
 }
 export class UploadBookingImagesDto {
-  @ApiPropertyOptional({
-    example: 'https://cdn.example.com/before-image.jpg',
-    description:
-      'URL of the before image - photo of the pet before grooming starts',
-  })
-  @IsOptional()
-  @IsString()
   beforeImage?: string;
-  @ApiPropertyOptional({
-    example: 'https://cdn.example.com/after-image.jpg',
-    description:
-      'URL of the after image - photo of the pet after grooming is completed',
-  })
-  @IsOptional()
-  @IsString()
   afterImage?: string;
 }

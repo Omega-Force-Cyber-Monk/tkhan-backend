@@ -6,7 +6,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
@@ -39,6 +39,46 @@ export class AuthController {
   @Public()
   @Post('register/groomer')
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: [
+        'fullName',
+        'phone',
+        'email',
+        'password',
+        'locationText',
+        'state',
+        'experienceYears',
+        'legalFullName',
+        'idNumber',
+        'idType',
+        'businessName',
+        'serviceArea',
+        'businessAddress',
+        'idFrontImage',
+        'idBackImage',
+      ],
+      properties: {
+        fullName: { type: 'string' },
+        phone: { type: 'string' },
+        email: { type: 'string', format: 'email' },
+        password: { type: 'string', minLength: 8 },
+        locationText: { type: 'string' },
+        state: { type: 'string' },
+        experienceYears: { type: 'number' },
+        legalFullName: { type: 'string' },
+        idNumber: { type: 'string' },
+        idType: { type: 'string', enum: ['PASSPORT', 'DRIVING_LICENSE'] },
+        businessName: { type: 'string' },
+        serviceArea: { type: 'string' },
+        businessAddress: { type: 'string' },
+        idFrontImage: { type: 'string', format: 'binary' },
+        idBackImage: { type: 'string', format: 'binary' },
+        selfieWithId: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'idFrontImage', maxCount: 1 },
@@ -55,21 +95,18 @@ export class AuthController {
       selfieWithId?: Express.Multer.File[];
     },
   ) {
-    dto.idFrontImage =
-      (await this.uploads.uploadImage(
-        files?.idFrontImage?.[0],
-        'tkhan/groomer-verification',
-      )) ?? dto.idFrontImage;
-    dto.idBackImage =
-      (await this.uploads.uploadImage(
-        files?.idBackImage?.[0],
-        'tkhan/groomer-verification',
-      )) ?? dto.idBackImage;
-    dto.selfieWithId =
-      (await this.uploads.uploadImage(
-        files?.selfieWithId?.[0],
-        'tkhan/groomer-verification',
-      )) ?? dto.selfieWithId;
+    dto.idFrontImage = await this.uploads.uploadImage(
+      files?.idFrontImage?.[0],
+      'tkhan/groomer-verification',
+    );
+    dto.idBackImage = await this.uploads.uploadImage(
+      files?.idBackImage?.[0],
+      'tkhan/groomer-verification',
+    );
+    dto.selfieWithId = await this.uploads.uploadImage(
+      files?.selfieWithId?.[0],
+      'tkhan/groomer-verification',
+    );
     return this.authService.registerGroomer(dto);
   }
   @Public() @Post('login') login(@Body() dto: LoginDto) {

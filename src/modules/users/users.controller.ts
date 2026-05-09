@@ -9,7 +9,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -30,20 +30,43 @@ export class UsersController {
   }
   @Patch('me')
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        fullName: { type: 'string' },
+        phone: { type: 'string' },
+        locationText: { type: 'string' },
+        state: { type: 'string' },
+        profileImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(FileInterceptor('profileImage'))
   async updateMe(
     @CurrentUser() user: AuthUser,
     @Body() dto: UpdateProfileDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    dto.profileImage =
-      (await this.uploads.uploadImage(file, 'tkhan/profile-images')) ??
-      dto.profileImage;
+    const profileImage = await this.uploads.uploadImage(
+      file,
+      'tkhan/profile-images',
+    );
+    if (profileImage) dto.profileImage = profileImage;
     return this.usersService.updateMe(user.sub, dto);
   }
 
   @Patch('me/profile-image')
   @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['profileImage'],
+      properties: {
+        profileImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
   @UseInterceptors(FileInterceptor('profileImage'))
   async updateProfileImage(
     @CurrentUser() user: AuthUser,
