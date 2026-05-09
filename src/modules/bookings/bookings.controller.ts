@@ -6,11 +6,15 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
+import { UploadsService } from '../uploads/uploads.service';
 import {
   BookingDecisionDto,
   BookingQueryDto,
@@ -23,7 +27,10 @@ import { BookingsService } from './bookings.service';
 @ApiBearerAuth()
 @Controller('bookings')
 export class BookingsController {
-  constructor(private readonly bookingsService: BookingsService) {}
+  constructor(
+    private readonly bookingsService: BookingsService,
+    private readonly uploads: UploadsService,
+  ) {}
   @Roles('BUYER') @Post() create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateBookingDto,
@@ -62,11 +69,35 @@ export class BookingsController {
   ) {
     return this.bookingsService.approveCompletion(user.sub, id);
   }
-  @Roles('GROOMER') @Patch(':id/images') uploadImages(
+  @Roles('GROOMER')
+  @Patch(':id/images')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'beforeImage', maxCount: 1 },
+      { name: 'afterImage', maxCount: 1 },
+    ]),
+  )
+  async uploadImages(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: UploadBookingImagesDto,
+    @UploadedFiles()
+    files?: {
+      beforeImage?: Express.Multer.File[];
+      afterImage?: Express.Multer.File[];
+    },
   ) {
+    dto.beforeImage =
+      (await this.uploads.uploadImage(
+        files?.beforeImage?.[0],
+        'tkhan/bookings',
+      )) ?? dto.beforeImage;
+    dto.afterImage =
+      (await this.uploads.uploadImage(
+        files?.afterImage?.[0],
+        'tkhan/bookings',
+      )) ?? dto.afterImage;
     return this.bookingsService.uploadImages(user.sub, id, dto);
   }
 }

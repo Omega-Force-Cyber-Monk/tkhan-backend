@@ -39,12 +39,14 @@ export class RegisterGroomerDto extends RegisterBuyerDto {
   @ApiProperty({ example: '120 Market Street, Austin, TX' })
   @IsString()
   businessAddress: string;
-  @ApiProperty({ example: 'https://cdn.example.com/id-front.jpg' })
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/id-front.jpg' })
+  @IsOptional()
   @IsString()
-  idFrontImage: string;
-  @ApiProperty({ example: 'https://cdn.example.com/id-back.jpg' })
+  idFrontImage?: string;
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/id-back.jpg' })
+  @IsOptional()
   @IsString()
-  idBackImage: string;
+  idBackImage?: string;
   @ApiPropertyOptional({
     example: 'https://cdn.example.com/selfie-with-id.jpg',
     description:

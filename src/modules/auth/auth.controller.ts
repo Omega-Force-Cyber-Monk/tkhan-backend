@@ -1,8 +1,16 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Post,
+  UploadedFiles,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
+import { UploadsService } from '../uploads/uploads.service';
 import { AuthService } from './auth.service';
 import {
   ChangePasswordDto,
@@ -18,16 +26,50 @@ import {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   @Public() @Post('register/buyer') registerBuyer(
     @Body() dto: RegisterBuyerDto,
   ) {
     return this.authService.registerBuyer(dto);
   }
-  @Public() @Post('register/groomer') registerGroomer(
+  @Public()
+  @Post('register/groomer')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'idFrontImage', maxCount: 1 },
+      { name: 'idBackImage', maxCount: 1 },
+      { name: 'selfieWithId', maxCount: 1 },
+    ]),
+  )
+  async registerGroomer(
     @Body() dto: RegisterGroomerDto,
+    @UploadedFiles()
+    files?: {
+      idFrontImage?: Express.Multer.File[];
+      idBackImage?: Express.Multer.File[];
+      selfieWithId?: Express.Multer.File[];
+    },
   ) {
+    dto.idFrontImage =
+      (await this.uploads.uploadImage(
+        files?.idFrontImage?.[0],
+        'tkhan/groomer-verification',
+      )) ?? dto.idFrontImage;
+    dto.idBackImage =
+      (await this.uploads.uploadImage(
+        files?.idBackImage?.[0],
+        'tkhan/groomer-verification',
+      )) ?? dto.idBackImage;
+    dto.selfieWithId =
+      (await this.uploads.uploadImage(
+        files?.selfieWithId?.[0],
+        'tkhan/groomer-verification',
+      )) ?? dto.selfieWithId;
     return this.authService.registerGroomer(dto);
   }
   @Public() @Post('login') login(@Body() dto: LoginDto) {

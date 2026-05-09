@@ -24,6 +24,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -53,6 +54,7 @@ import { HealthController } from './health.controller';
     NotificationsModule,
     TicketsModule,
     DashboardModule,
+    UploadsModule,
   ],
   controllers: [HealthController],
   providers: [

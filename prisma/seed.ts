@@ -13,6 +13,10 @@ type AdminSeed = {
   state?: string;
 };
 
+type DemoUserSeed = AdminSeed & {
+  role: 'BUYER' | 'GROOMER' | 'ADMIN';
+};
+
 function loadEnvFile(fileName: string) {
   const filePath = resolve(process.cwd(), fileName);
   if (!existsSync(filePath)) return;
@@ -115,9 +119,151 @@ async function seedAdmin(admin: AdminSeed) {
   console.log(`Seeded admin: ${normalizedEmail}`);
 }
 
+async function seedDemoUser(user: DemoUserSeed) {
+  const normalizedEmail = user.email.toLowerCase();
+  const password = await bcrypt.hash(user.password, bcryptRounds);
+
+  const savedUser = await prisma.user.upsert({
+    where: { email: normalizedEmail },
+    update: {
+      fullName: user.fullName,
+      phone: user.phone,
+      password,
+      locationText: user.locationText,
+      state: user.state,
+      role: user.role,
+      emailVerified: true,
+      status: 'ACTIVE',
+      isBlocked: false,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+      refreshTokenHash: null,
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+    },
+    create: {
+      fullName: user.fullName,
+      email: normalizedEmail,
+      phone: user.phone,
+      password,
+      locationText: user.locationText,
+      state: user.state,
+      role: user.role,
+      emailVerified: true,
+      status: 'ACTIVE',
+      isBlocked: false,
+    },
+  });
+
+  if (user.role === 'BUYER') {
+    await prisma.buyerProfile.upsert({
+      where: { userId: savedUser.id },
+      update: {},
+      create: { userId: savedUser.id },
+    });
+  }
+
+  if (user.role === 'GROOMER') {
+    await prisma.groomerProfile.upsert({
+      where: { userId: savedUser.id },
+      update: {
+        availableForBookings: true,
+        approvalStatus: 'APPROVED',
+        approvedAt: new Date(),
+      },
+      create: {
+        userId: savedUser.id,
+        experienceYears: 4,
+        legalFullName: user.fullName,
+        idNumber: `DEMO-${savedUser.id.slice(0, 8)}`,
+        idType: 'PASSPORT',
+        businessName: `${user.fullName} Grooming`,
+        serviceArea: user.locationText || 'Austin metro',
+        businessAddress: user.locationText || '120 Market Street, Austin, TX',
+        idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+        idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+        selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+        shortBio: 'Verified demo groomer account.',
+        availableForBookings: true,
+        approvalStatus: 'APPROVED',
+        approvedAt: new Date(),
+      },
+    });
+  }
+
+  console.log(`Seeded ${user.role.toLowerCase()}: ${normalizedEmail}`);
+}
+
 async function main() {
   for (const admin of configuredAdmins()) {
     await seedAdmin(admin);
+  }
+
+  const shouldSeedDemoUsers =
+    process.env.SEED_DEMO_USERS === 'true' ||
+    (!isHostedProduction && process.env.SEED_DEMO_USERS !== 'false');
+
+  if (shouldSeedDemoUsers) {
+    for (const user of [
+      {
+        role: 'BUYER',
+        fullName: 'Demo Buyer One',
+        email: 'buyer1@tkhan.local',
+        phone: '+15550001001',
+        password: 'Password@123',
+        locationText: 'Austin, TX',
+        state: 'TX',
+      },
+      {
+        role: 'BUYER',
+        fullName: 'Demo Buyer Two',
+        email: 'buyer2@tkhan.local',
+        phone: '+15550001002',
+        password: 'Password@123',
+        locationText: 'Dallas, TX',
+        state: 'TX',
+      },
+      {
+        role: 'GROOMER',
+        fullName: 'Demo Groomer One',
+        email: 'groomer1@tkhan.local',
+        phone: '+15550002001',
+        password: 'Password@123',
+        locationText: 'Austin, TX',
+        state: 'TX',
+      },
+      {
+        role: 'GROOMER',
+        fullName: 'Demo Groomer Two',
+        email: 'groomer2@tkhan.local',
+        phone: '+15550002002',
+        password: 'Password@123',
+        locationText: 'Dallas, TX',
+        state: 'TX',
+      },
+      {
+        role: 'ADMIN',
+        fullName: 'Demo Admin One',
+        email: 'admin1@tkhan.local',
+        phone: '+15550003001',
+        password: 'Password@123',
+        locationText: 'Austin, TX',
+        state: 'TX',
+      },
+      {
+        role: 'ADMIN',
+        fullName: 'Demo Admin Two',
+        email: 'admin2@tkhan.local',
+        phone: '+15550003002',
+        password: 'Password@123',
+        locationText: 'Dallas, TX',
+        state: 'TX',
+      },
+    ] satisfies DemoUserSeed[]) {
+      await seedDemoUser(user);
+    }
+  } else {
+    console.log('Skipped demo users. Set SEED_DEMO_USERS=true to seed them.');
   }
 
   for (const category of [

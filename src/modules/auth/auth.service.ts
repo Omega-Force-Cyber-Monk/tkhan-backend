@@ -59,6 +59,9 @@ export class AuthService {
 
   async registerGroomer(dto: RegisterGroomerDto) {
     await this.ensureEmailFree(dto.email);
+    if (!dto.idFrontImage || !dto.idBackImage) {
+      throw new BadRequestException('ID front and back images are required');
+    }
     const password = await this.hash(dto.password);
     const user = await this.prisma.user.create({
       data: {
