@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { plainToInstance, Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -36,25 +36,43 @@ export const parseStringArray = (value: unknown) => {
 };
 
 export const parseCertificationArray = (value: unknown) => {
+  const normalizeCertification = (item: unknown) => {
+    if (typeof item === 'string') {
+      return plainToInstance(GroomerCertificationDto, {
+        certificateTitle: item,
+      });
+    }
+    if (!item || typeof item !== 'object') return item;
+    const record = item as Record<string, unknown>;
+    return plainToInstance(GroomerCertificationDto, {
+      certificateTitle:
+        record.certificateTitle ??
+        record['certificate title'] ??
+        record.title ??
+        '',
+      issuingOrganization:
+        record.issuingOrganization ??
+        record['issuing organization'] ??
+        record.organization ??
+        '',
+    });
+  };
+
   if (value === undefined || value === null || value === '') return undefined;
   if (Array.isArray(value)) {
-    return value.map((item) =>
-      typeof item === 'string' ? { certificateTitle: item } : item,
-    );
+    return value.map(normalizeCertification);
   }
   if (typeof value !== 'string') return value;
   try {
     const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [parsed];
-    return parsed.map((item) =>
-      typeof item === 'string' ? { certificateTitle: item } : item,
-    );
+    if (!Array.isArray(parsed)) return [normalizeCertification(parsed)];
+    return parsed.map(normalizeCertification);
   } catch {
     return value
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean)
-      .map((certificateTitle) => ({ certificateTitle }));
+      .map(normalizeCertification);
   }
 };
 
