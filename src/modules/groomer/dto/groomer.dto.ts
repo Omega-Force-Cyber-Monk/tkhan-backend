@@ -1,6 +1,63 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsArray,
+  IsBoolean,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+
+export class GroomerCertificationDto {
+  @ApiPropertyOptional({ example: 'Pet First Aid' })
+  @IsOptional()
+  @IsString()
+  certificateTitle?: string;
+
+  @ApiPropertyOptional({ example: 'American Red Cross' })
+  @IsOptional()
+  @IsString()
+  issuingOrganization?: string;
+}
+
+export const parseStringArray = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [String(parsed)];
+  } catch {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+};
+
+export const parseCertificationArray = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      typeof item === 'string' ? { certificateTitle: item } : item,
+    );
+  }
+  if (typeof value !== 'string') return value;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [parsed];
+    return parsed.map((item) =>
+      typeof item === 'string' ? { certificateTitle: item } : item,
+    );
+  } catch {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((certificateTitle) => ({ certificateTitle }));
+  }
+};
+
 export class UpdateGroomerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() fullName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
@@ -16,25 +73,32 @@ export class UpdateGroomerProfileDto {
   @IsOptional()
   @IsString()
   selfieWithId?: string;
-  @ApiPropertyOptional({ type: [String] })
-  @Transform(({ value }) => {
-    if (value === undefined || value === null || value === '') return undefined;
-    if (Array.isArray(value)) return value;
-    if (typeof value !== 'string') return value;
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [String(parsed)];
-    } catch {
-      return value
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
+  @ApiPropertyOptional({
+    type: [GroomerCertificationDto],
+    example: [
+      {
+        certificateTitle: 'Pet First Aid',
+        issuingOrganization: 'American Red Cross',
+      },
+    ],
   })
+  @Transform(({ value }) => parseCertificationArray(value))
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GroomerCertificationDto)
+  certifications?: GroomerCertificationDto[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['In-home grooming', 'Mobile grooming'],
+  })
+  @Transform(({ value }) => parseStringArray(value))
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  certifications?: string[];
+  serviceModes?: string[];
+
   @ApiPropertyOptional()
   @Transform(({ value }) => {
     if (value === 'true') return true;

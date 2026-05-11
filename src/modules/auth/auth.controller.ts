@@ -73,6 +73,18 @@ export class AuthController {
         businessName: { type: 'string' },
         serviceArea: { type: 'string' },
         businessAddress: { type: 'string' },
+        certifications: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              certificateTitle: { type: 'string' },
+              issuingOrganization: { type: 'string' },
+            },
+          },
+        },
+        serviceModes: { type: 'array', items: { type: 'string' } },
+        profileImage: { type: 'string', format: 'binary' },
         idFrontImage: { type: 'string', format: 'binary' },
         idBackImage: { type: 'string', format: 'binary' },
         selfieWithId: { type: 'string', format: 'binary' },
@@ -81,6 +93,7 @@ export class AuthController {
   })
   @UseInterceptors(
     FileFieldsInterceptor([
+      { name: 'profileImage', maxCount: 1 },
       { name: 'idFrontImage', maxCount: 1 },
       { name: 'idBackImage', maxCount: 1 },
       { name: 'selfieWithId', maxCount: 1 },
@@ -90,11 +103,16 @@ export class AuthController {
     @Body() dto: RegisterGroomerDto,
     @UploadedFiles()
     files?: {
+      profileImage?: Express.Multer.File[];
       idFrontImage?: Express.Multer.File[];
       idBackImage?: Express.Multer.File[];
       selfieWithId?: Express.Multer.File[];
     },
   ) {
+    dto.profileImage = await this.uploads.uploadImage(
+      files?.profileImage?.[0],
+      'tkhan/profile-images',
+    );
     dto.idFrontImage = await this.uploads.uploadImage(
       files?.idFrontImage?.[0],
       'tkhan/groomer-verification',

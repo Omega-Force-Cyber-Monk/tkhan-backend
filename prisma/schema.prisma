@@ -177,7 +177,8 @@ model GroomerProfile {
   selfieWithId           String?
   shortBio               String?
   about                  String?
-  certifications         String[]               @default([])
+  certifications         Json                   @default("[]")
+  serviceModes           String[]               @default([])
   availableForBookings   Boolean                @default(false)
   approvalStatus         GroomerApprovalStatus  @default(PENDING)
   rejectionReason        String?

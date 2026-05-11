@@ -12,7 +12,7 @@ export class GroomerService {
     });
     return this.prisma.groomerProfile.update({
       where: { userId },
-      data: profile,
+      data: profile as any,
       include: { user: true },
     });
   }

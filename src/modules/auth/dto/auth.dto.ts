@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsEmail,
   IsEnum,
   IsInt,
@@ -8,7 +10,13 @@ import {
   IsString,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import {
+  GroomerCertificationDto,
+  parseCertificationArray,
+  parseStringArray,
+} from '../../groomer/dto/groomer.dto';
 
 export enum IdTypeDto {
   PASSPORT = 'PASSPORT',
@@ -39,8 +47,38 @@ export class RegisterGroomerDto extends RegisterBuyerDto {
   @ApiProperty({ example: '120 Market Street, Austin, TX' })
   @IsString()
   businessAddress: string;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
+  profileImage?: string;
+  @ApiPropertyOptional({ type: [GroomerCertificationDto] })
+  @Transform(({ value }) => parseCertificationArray(value))
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GroomerCertificationDto)
+  certifications?: GroomerCertificationDto[];
+  @ApiPropertyOptional({ type: [String], example: ['In-home grooming'] })
+  @Transform(({ value }) => parseStringArray(value))
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  serviceModes?: string[];
+  @ApiPropertyOptional({ type: 'string', format: 'binary' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
   idFrontImage?: string;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
   idBackImage?: string;
+  @ApiPropertyOptional({ type: 'string', format: 'binary' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsString()
   selfieWithId?: string;
 }
 

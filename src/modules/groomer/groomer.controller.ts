@@ -33,7 +33,17 @@ export class GroomerController {
         phone: { type: 'string' },
         shortBio: { type: 'string' },
         about: { type: 'string' },
-        certifications: { type: 'array', items: { type: 'string' } },
+        certifications: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              certificateTitle: { type: 'string' },
+              issuingOrganization: { type: 'string' },
+            },
+          },
+        },
+        serviceModes: { type: 'array', items: { type: 'string' } },
         availableForBookings: { type: 'boolean' },
         profileImage: { type: 'string', format: 'binary' },
         selfieWithId: { type: 'string', format: 'binary' },
