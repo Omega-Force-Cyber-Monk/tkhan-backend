@@ -1,9 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
 import { GroomerSearchDto } from './dto/buyer.dto';
 @Injectable()
 export class BuyerService {
+  private readonly logger = new Logger(BuyerService.name);
+
   constructor(private readonly prisma: PrismaService) {}
   async home(userId?: string, state?: string) {
     const [categories, groomers] = await Promise.all([
@@ -69,8 +75,9 @@ export class BuyerService {
         },
       }),
     };
-    const [items, total] = await Promise.all([
-      this.prisma.groomerProfile.findMany({
+    let items;
+    try {
+      items = await this.prisma.groomerProfile.findMany({
         where,
         ...paginate(page, limit),
         orderBy: { [sortBy]: sortOrder },
@@ -78,25 +85,53 @@ export class BuyerService {
           user: true,
           services: { where: { active: true }, include: { category: true } },
         },
-      }),
-      this.prisma.groomerProfile.count({ where }),
-    ]);
-    const groomers = await Promise.all(
-      items.map(async (g) => {
-        const rating = await this.prisma.review.aggregate({
-          where: { revieweeId: g.userId, targetType: 'GROOMER' },
-          _avg: { rating: true },
-        });
-        const prices = g.services.map((s) => Number(s.price));
-        return {
-          ...g,
-          averageRating: rating._avg.rating ?? 0,
-          priceRange: prices.length
-            ? { min: Math.min(...prices), max: Math.max(...prices) }
-            : null,
-        };
-      }),
-    );
+      });
+    } catch (error) {
+      this.handleDatabaseError(error);
+    }
+
+    let total = items.length;
+    try {
+      total = await this.prisma.groomerProfile.count({ where });
+    } catch (error) {
+      this.logger.warn(
+        `Could not count groomers for buyer search. Falling back to current page count. ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const ratingByUserId = new Map<string, number>();
+    try {
+      const ratings = await this.prisma.review.groupBy({
+        by: ['revieweeId'],
+        where: {
+          revieweeId: { in: items.map((g) => g.userId) },
+          targetType: 'GROOMER',
+        },
+        _avg: { rating: true },
+      });
+      ratings.forEach((rating) => {
+        ratingByUserId.set(rating.revieweeId, rating._avg.rating ?? 0);
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not load groomer ratings for buyer search. Falling back to zero ratings. ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const groomers = items.map((g) => {
+      const prices = g.services.map((s) => Number(s.price));
+      return {
+        ...g,
+        averageRating: ratingByUserId.get(g.userId) ?? 0,
+        priceRange: prices.length
+          ? { min: Math.min(...prices), max: Math.max(...prices) }
+          : null,
+      };
+    });
     const filtered =
       dto.minRating !== undefined
         ? groomers.filter((g) => g.averageRating >= dto.minRating!)
@@ -122,5 +157,28 @@ export class BuyerService {
         availability: { include: { slots: true } },
       },
     });
+  }
+
+  private handleDatabaseError(error: unknown): never {
+    const dbError = error as { code?: string; message?: string };
+    const connectionErrorCodes = new Set([
+      'EAI_AGAIN',
+      'ECONNREFUSED',
+      'ECONNRESET',
+      'ENOTFOUND',
+      'ETIMEDOUT',
+    ]);
+
+    if (dbError.code && connectionErrorCodes.has(dbError.code)) {
+      this.logger.error(
+        `Database connection failed while searching groomers. code=${dbError.code}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw new ServiceUnavailableException(
+        `Database connection failed (${dbError.code}). Check DATABASE_URL and database network access.`,
+      );
+    }
+
+    throw error;
   }
 }

@@ -1,40 +1,44 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 export class GroomerSearchDto extends PaginationDto {
-  @ApiPropertyOptional({ example: 'Ava' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ example: 'TX' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   state?: string;
 
-  @ApiPropertyOptional({ example: 'service-uuid' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   serviceId?: string;
 
-  @ApiPropertyOptional({ example: 'category-uuid' })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   categoryId?: string;
 
-  @ApiPropertyOptional({ type: Number, example: 4 })
+  @ApiPropertyOptional({ type: Number })
+  @Type(() => Number)
   @IsOptional()
   @IsNumber()
   @Min(0)
   minRating?: number;
 
-  @ApiPropertyOptional({ type: Number, example: 25 })
+  @ApiPropertyOptional({ type: Number })
+  @Type(() => Number)
   @IsOptional()
   @IsNumber()
   @Min(0)
   minPrice?: number;
 
-  @ApiPropertyOptional({ type: Number, example: 100 })
+  @ApiPropertyOptional({ type: Number })
+  @Type(() => Number)
   @IsOptional()
   @IsNumber()
   @Min(0)
