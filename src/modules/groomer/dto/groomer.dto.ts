@@ -35,45 +35,114 @@ export const parseStringArray = (value: unknown) => {
   }
 };
 
+const cleanText = (value: unknown) =>
+  String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const tryParseJson = (value: string) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+};
+
+const extractJsonObjects = (value: string) => {
+  const objects: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{') {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(value.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+};
+
 export const parseCertificationArray = (value: unknown) => {
   const normalizeCertification = (item: unknown) => {
     if (typeof item === 'string') {
+      const parsed = tryParseJson(item.trim());
+      if (parsed !== undefined) return normalizeCertification(parsed);
+
       return plainToInstance(GroomerCertificationDto, {
-        certificateTitle: item,
+        certificateTitle: cleanText(item),
       });
     }
     if (!item || typeof item !== 'object') return item;
     const record = item as Record<string, unknown>;
     return plainToInstance(GroomerCertificationDto, {
-      certificateTitle:
+      certificateTitle: cleanText(
         record.certificateTitle ??
-        record['certificate title'] ??
-        record.title ??
-        '',
-      issuingOrganization:
+          record['certificate title'] ??
+          record.title ??
+          '',
+      ),
+      issuingOrganization: cleanText(
         record.issuingOrganization ??
-        record['issuing organization'] ??
-        record.organization ??
-        '',
+          record['issuing organization'] ??
+          record.organization ??
+          '',
+      ),
     });
   };
 
   if (value === undefined || value === null || value === '') return undefined;
   if (Array.isArray(value)) {
-    return value.map(normalizeCertification);
+    return value.flatMap((item) => {
+      if (typeof item !== 'string') return [normalizeCertification(item)];
+      const extracted = extractJsonObjects(item);
+      return extracted.length
+        ? extracted.map((object) => normalizeCertification(object))
+        : [normalizeCertification(item)];
+    });
   }
   if (typeof value !== 'string') return value;
-  try {
-    const parsed = JSON.parse(value);
+  const parsed = tryParseJson(value);
+  if (parsed !== undefined) {
     if (!Array.isArray(parsed)) return [normalizeCertification(parsed)];
     return parsed.map(normalizeCertification);
-  } catch {
-    return value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .map(normalizeCertification);
   }
+
+  const extracted = extractJsonObjects(value);
+  if (extracted.length) {
+    return extracted.map((object) => normalizeCertification(object));
+  }
+
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map(normalizeCertification);
 };
 
 export class UpdateGroomerProfileDto {
