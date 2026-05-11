@@ -10,7 +10,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOkResponse,
+  ApiCreatedResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -23,6 +30,85 @@ import {
   UploadBookingImagesDto,
 } from './dto/bookings.dto';
 import { BookingsService } from './bookings.service';
+
+const bookingExample = {
+  id: 'booking-uuid',
+  bookingNumber: 'BK-1770000000000',
+  buyerId: 'buyer-user-uuid',
+  groomerId: 'groomer-user-uuid',
+  petId: 'pet-uuid',
+  availabilitySlotId: 'slot-uuid',
+  serviceLocation: 'Customer home',
+  addressLine: '120 Market Street',
+  state: 'TX',
+  city: 'Austin',
+  postalCode: '78701',
+  note: 'Please use hypoallergenic shampoo.',
+  status: 'PAYMENT_PENDING',
+  subtotalAmount: '75.00',
+  platformFeeAmount: '7.50',
+  groomerEarningAmount: '67.50',
+  totalAmount: '75.00',
+  requestedAt: null,
+  acceptedAt: null,
+  rejectedAt: null,
+  cancelledAt: null,
+  inProgressAt: null,
+  completionRequestedAt: null,
+  completedAt: null,
+  refundedAt: null,
+  rejectionReason: null,
+  cancellationReason: null,
+  completionNote: null,
+  beforeImage: null,
+  afterImage: null,
+  createdAt: '2026-05-11T04:30:00.000Z',
+  updatedAt: '2026-05-11T04:30:00.000Z',
+  services: [
+    {
+      id: 'booking-service-uuid',
+      bookingId: 'booking-uuid',
+      serviceId: 'service-uuid',
+      serviceTitle: 'Full Grooming',
+      serviceDescription: 'Bath, haircut, nail trim and brushing.',
+      durationMinutes: 90,
+      price: '75.00',
+      categoryName: 'Dog Grooming',
+      createdAt: '2026-05-11T04:30:00.000Z',
+    },
+  ],
+  addons: [
+    {
+      id: 'booking-addon-uuid',
+      bookingId: 'booking-uuid',
+      addonId: 'addon-uuid',
+      addonTitle: 'Teeth Brushing',
+      addonDescription: 'Gentle dental care add-on.',
+      durationMinutes: 10,
+      price: '10.00',
+      createdAt: '2026-05-11T04:30:00.000Z',
+    },
+  ],
+  pet: {
+    id: 'pet-uuid',
+    buyerId: 'buyer-user-uuid',
+    name: 'Milo',
+    breed: 'Golden Retriever',
+    age: 3,
+    temperament: 'Friendly',
+    petType: 'DOG',
+    petSize: 'LARGE',
+    createdAt: '2026-05-10T10:00:00.000Z',
+    updatedAt: '2026-05-10T10:00:00.000Z',
+  },
+};
+
+const createdBookingExample = {
+  ...bookingExample,
+  pet: undefined,
+};
+delete createdBookingExample.pet;
+
 @ApiTags('bookings')
 @ApiBearerAuth()
 @Controller('bookings')
@@ -31,13 +117,39 @@ export class BookingsController {
     private readonly bookingsService: BookingsService,
     private readonly uploads: UploadsService,
   ) {}
-  @Roles('BUYER') @Post() create(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: CreateBookingDto,
-  ) {
+  @Roles('BUYER')
+  @Post()
+  @ApiCreatedResponse({
+    description: 'Booking created successfully.',
+    schema: {
+      example: {
+        success: true,
+        data: createdBookingExample,
+      },
+    },
+  })
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateBookingDto) {
     return this.bookingsService.create(user.sub, dto);
   }
-  @Get() list(@CurrentUser() user: AuthUser, @Query() dto: BookingQueryDto) {
+  @Get()
+  @ApiOkResponse({
+    description: 'Paginated booking list for the current user.',
+    schema: {
+      example: {
+        success: true,
+        data: {
+          items: [bookingExample],
+          meta: {
+            total: 1,
+            page: 1,
+            limit: 20,
+            totalPages: 1,
+          },
+        },
+      },
+    },
+  })
+  list(@CurrentUser() user: AuthUser, @Query() dto: BookingQueryDto) {
     return this.bookingsService.listForUser(user.sub, user.role, dto);
   }
   @Get(':id') detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
