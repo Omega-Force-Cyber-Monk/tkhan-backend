@@ -22,6 +22,31 @@ export class BuyerService {
     return { categories, groomers, userId };
   }
   async searchGroomers(dto: GroomerSearchDto) {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+    const sortBy = [
+      'createdAt',
+      'updatedAt',
+      'businessName',
+      'experienceYears',
+    ].includes(dto.sortBy)
+      ? dto.sortBy
+      : 'createdAt';
+    const sortOrder = dto.sortOrder ?? 'desc';
+    const serviceFilterRequested =
+      dto.serviceId !== undefined ||
+      dto.categoryId !== undefined ||
+      dto.minPrice !== undefined ||
+      dto.maxPrice !== undefined;
+    const priceFilter =
+      dto.minPrice !== undefined || dto.maxPrice !== undefined
+        ? {
+            price: {
+              ...(dto.minPrice !== undefined && { gte: dto.minPrice }),
+              ...(dto.maxPrice !== undefined && { lte: dto.maxPrice }),
+            },
+          }
+        : {};
     const where: any = {
       approvalStatus: 'APPROVED',
       availableForBookings: true,
@@ -33,20 +58,22 @@ export class BuyerService {
           fullName: { contains: dto.search, mode: 'insensitive' },
         }),
       },
-      services: {
-        some: {
-          active: true,
-          ...(dto.categoryId && { categoryId: dto.categoryId }),
-          ...(dto.minPrice !== undefined && { price: { gte: dto.minPrice } }),
-          ...(dto.maxPrice !== undefined && { price: { lte: dto.maxPrice } }),
+      ...(serviceFilterRequested && {
+        services: {
+          some: {
+            active: true,
+            ...(dto.serviceId && { id: dto.serviceId }),
+            ...(dto.categoryId && { categoryId: dto.categoryId }),
+            ...priceFilter,
+          },
         },
-      },
+      }),
     };
     const [items, total] = await Promise.all([
       this.prisma.groomerProfile.findMany({
         where,
-        ...paginate(dto.page, dto.limit),
-        orderBy: { createdAt: 'desc' },
+        ...paginate(page, limit),
+        orderBy: { [sortBy]: sortOrder },
         include: {
           user: true,
           services: { where: { active: true }, include: { category: true } },
@@ -74,7 +101,12 @@ export class BuyerService {
       dto.minRating !== undefined
         ? groomers.filter((g) => g.averageRating >= dto.minRating!)
         : groomers;
-    return paginated(filtered, total, dto.page, dto.limit);
+    return paginated(
+      filtered,
+      dto.minRating !== undefined ? filtered.length : total,
+      page,
+      limit,
+    );
   }
   groomerProfile(id: string) {
     return this.prisma.groomerProfile.findUniqueOrThrow({
