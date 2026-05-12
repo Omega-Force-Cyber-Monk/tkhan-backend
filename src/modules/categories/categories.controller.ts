@@ -56,6 +56,8 @@ export class CategoriesController {
     @Body() dto: CreateCategoryDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    delete dto.image;
+    delete dto.imageUrl;
     const imageUrl = await this.uploads.uploadImage(file, 'tkhan/categories');
     if (imageUrl) dto.imageUrl = imageUrl;
     return this.categoriesService.create(dto);
@@ -81,6 +83,8 @@ export class CategoriesController {
     @Body() dto: UpdateCategoryDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    delete dto.image;
+    delete dto.imageUrl;
     const imageUrl = await this.uploads.uploadImage(file, 'tkhan/categories');
     if (imageUrl) dto.imageUrl = imageUrl;
     return this.categoriesService.update(id, dto);

@@ -109,6 +109,32 @@ const createdBookingExample = {
 };
 delete createdBookingExample.pet;
 
+const bookingDetailExample = {
+  ...bookingExample,
+  earnings: {
+    subtotalAmount: '75.00',
+    platformFeeAmount: '7.50',
+    groomerEarningAmount: '67.50',
+    totalAmount: '75.00',
+    payoutId: 'payout-uuid',
+    payoutStatus: 'PENDING',
+    payoutReleasedAt: null,
+  },
+};
+
+const bookingListResponseExample = {
+  success: true,
+  data: {
+    items: [bookingExample],
+    meta: {
+      total: 1,
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+    },
+  },
+};
+
 @ApiTags('bookings')
 @ApiBearerAuth()
 @Controller('bookings')
@@ -135,16 +161,11 @@ export class BookingsController {
   @ApiOkResponse({
     description: 'Paginated booking list for the current user.',
     schema: {
-      example: {
-        success: true,
-        data: {
-          items: [bookingExample],
-          meta: {
-            total: 1,
-            page: 1,
-            limit: 20,
-            totalPages: 1,
-          },
+      example: bookingListResponseExample,
+      examples: {
+        default: {
+          summary: 'Demo response',
+          value: bookingListResponseExample,
         },
       },
     },
@@ -152,7 +173,17 @@ export class BookingsController {
   list(@CurrentUser() user: AuthUser, @Query() dto: BookingQueryDto) {
     return this.bookingsService.listForUser(user.sub, user.role, dto);
   }
-  @Get(':id') detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+  @Get(':id')
+  @ApiOkResponse({
+    description: 'Booking detail with earnings data.',
+    schema: {
+      example: {
+        success: true,
+        data: bookingDetailExample,
+      },
+    },
+  })
+  detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.bookingsService.detail(user.sub, user.role, id);
   }
   @Roles('GROOMER') @Patch(':id/accept') accept(

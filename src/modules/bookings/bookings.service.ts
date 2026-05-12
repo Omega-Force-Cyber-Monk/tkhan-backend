@@ -134,7 +134,7 @@ export class BookingsService {
       this.prisma.booking.findMany({
         where,
         ...paginate(dto.page, dto.limit),
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [dto.sortBy]: dto.sortOrder },
         include: { services: true, addons: true, pet: true },
       }),
       this.prisma.booking.count({ where }),
@@ -150,7 +150,7 @@ export class BookingsService {
         addons: true,
         pet: true,
         payments: true,
-        payouts: true,
+        payouts: { orderBy: { createdAt: 'desc' } },
         reviews: true,
       },
     });
@@ -160,7 +160,23 @@ export class BookingsService {
       booking.groomerId !== userId
     )
       throw new ForbiddenException('Booking access denied');
-    return booking;
+    return this.withEarnings(booking);
+  }
+
+  private withEarnings(booking: any) {
+    const latestPayout = booking.payouts?.[0] ?? null;
+    return {
+      ...booking,
+      earnings: {
+        subtotalAmount: booking.subtotalAmount,
+        platformFeeAmount: booking.platformFeeAmount,
+        groomerEarningAmount: booking.groomerEarningAmount,
+        totalAmount: booking.totalAmount,
+        payoutId: latestPayout?.id ?? null,
+        payoutStatus: latestPayout?.status ?? null,
+        payoutReleasedAt: latestPayout?.releasedAt ?? null,
+      },
+    };
   }
 
   async accept(groomerId: string, id: string) {
