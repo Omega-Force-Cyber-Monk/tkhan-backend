@@ -16,6 +16,20 @@ import {
   UploadBookingImagesDto,
 } from './dto/bookings.dto';
 
+const bookingBuyerSelect = {
+  id: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  profileImage: true,
+  locationText: true,
+  state: true,
+  role: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -135,7 +149,12 @@ export class BookingsService {
         where,
         ...paginate(dto.page, dto.limit),
         orderBy: { [dto.sortBy]: dto.sortOrder },
-        include: { services: true, addons: true, pet: true },
+        include: {
+          services: true,
+          addons: true,
+          pet: true,
+          buyer: { select: bookingBuyerSelect },
+        },
       }),
       this.prisma.booking.count({ where }),
     ]);
@@ -149,6 +168,7 @@ export class BookingsService {
         services: true,
         addons: true,
         pet: true,
+        buyer: { select: bookingBuyerSelect },
         payments: true,
         payouts: { orderBy: { createdAt: 'desc' } },
         reviews: true,

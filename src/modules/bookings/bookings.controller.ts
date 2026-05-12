@@ -101,13 +101,28 @@ const bookingExample = {
     createdAt: '2026-05-10T10:00:00.000Z',
     updatedAt: '2026-05-10T10:00:00.000Z',
   },
+  buyer: {
+    id: 'buyer-user-uuid',
+    fullName: 'Amit Khan',
+    email: 'buyer@example.com',
+    phone: '+15551234567',
+    profileImage: 'https://res.cloudinary.com/demo/image/upload/buyer.jpg',
+    locationText: 'Austin, TX',
+    state: 'TX',
+    role: 'BUYER',
+    status: 'ACTIVE',
+    createdAt: '2026-05-10T09:00:00.000Z',
+    updatedAt: '2026-05-10T09:00:00.000Z',
+  },
 };
 
 const createdBookingExample = {
   ...bookingExample,
   pet: undefined,
+  buyer: undefined,
 };
 delete createdBookingExample.pet;
+delete createdBookingExample.buyer;
 
 const bookingDetailExample = {
   ...bookingExample,
