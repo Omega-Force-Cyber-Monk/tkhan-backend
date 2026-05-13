@@ -52,6 +52,7 @@ export class PetsController {
     @Body() dto: CreatePetDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    delete dto.petImage;
     const petImage = await this.uploads.uploadImage(file, 'tkhan/pet-images');
     if (petImage) dto.petImage = petImage;
     return this.petsService.create(user.sub, dto);
@@ -69,6 +70,7 @@ export class PetsController {
     @Body() dto: UpdatePetDto,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    delete dto.petImage;
     const petImage = await this.uploads.uploadImage(file, 'tkhan/pet-images');
     if (petImage) dto.petImage = petImage;
     return this.petsService.update(user.sub, id, dto);
