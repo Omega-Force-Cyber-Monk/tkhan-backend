@@ -26,4 +26,19 @@ export class CreateServiceDto {
   addonIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
-export class UpdateServiceDto extends CreateServiceDto {}
+export class UpdateServiceDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() title?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  durationMinutes?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) price?: number;
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  addonIds?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+}

@@ -13,6 +13,7 @@ export class ServicesService {
 
   async create(userId: string, dto: CreateServiceDto) {
     const groomer = await this.getApprovedGroomer(userId);
+    await this.assertAddonsOwnedByGroomer(groomer.id, dto.addonIds);
     return this.prisma.service.create({
       data: {
         groomerId: groomer.id,
@@ -58,6 +59,29 @@ export class ServicesService {
     return paginated(items, total, dto.page, dto.limit);
   }
 
+  async listMine(userId: string, dto: ServiceQueryDto) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+    });
+    return this.list({ ...dto, groomerId: groomer.id });
+  }
+
+  async findMine(userId: string, id: string) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+    });
+    const service = await this.prisma.service.findUniqueOrThrow({
+      where: { id },
+      include: {
+        category: true,
+        addonMappings: { include: { addon: true } },
+      },
+    });
+    if (service.groomerId !== groomer.id)
+      throw new ForbiddenException('Service is owned by another groomer');
+    return service;
+  }
+
   async update(userId: string, id: string, dto: UpdateServiceDto) {
     const groomer = await this.getApprovedGroomer(userId);
     const service = await this.prisma.service.findUniqueOrThrow({
@@ -65,6 +89,7 @@ export class ServicesService {
     });
     if (service.groomerId !== groomer.id)
       throw new ForbiddenException('Service is owned by another groomer');
+    await this.assertAddonsOwnedByGroomer(groomer.id, dto.addonIds);
     return this.prisma.$transaction(async (tx) => {
       if (dto.addonIds) {
         await tx.serviceAddonMapping.deleteMany({ where: { serviceId: id } });
@@ -112,5 +137,20 @@ export class ServicesService {
     if (groomer.approvalStatus !== 'APPROVED')
       throw new ForbiddenException('Groomer approval required');
     return groomer;
+  }
+
+  private async assertAddonsOwnedByGroomer(
+    groomerId: string,
+    addonIds?: string[],
+  ) {
+    if (!addonIds?.length) return;
+    const count = await this.prisma.serviceAddon.count({
+      where: {
+        id: { in: addonIds },
+        groomerId,
+      },
+    });
+    if (count !== new Set(addonIds).size)
+      throw new ForbiddenException('One or more add-ons are invalid');
   }
 }

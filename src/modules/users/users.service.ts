@@ -68,6 +68,43 @@ export class UsersService {
     return sanitizeUser(user);
   }
 
+  async deleteMe(userId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      const bookings = await tx.booking.findMany({
+        where: { OR: [{ buyerId: userId }, { groomerId: userId }] },
+        select: { id: true, availabilitySlotId: true },
+      });
+      const bookingIds = bookings.map((booking) => booking.id);
+      const slotIds = bookings
+        .map((booking) => booking.availabilitySlotId)
+        .filter((id): id is string => Boolean(id));
+
+      if (bookingIds.length > 0) {
+        await tx.chatConversation.deleteMany({
+          where: { bookingId: { in: bookingIds } },
+        });
+        await tx.booking.deleteMany({
+          where: { id: { in: bookingIds } },
+        });
+      }
+
+      await tx.chatConversation.deleteMany({
+        where: { OR: [{ buyerId: userId }, { groomerId: userId }] },
+      });
+
+      if (slotIds.length > 0) {
+        await tx.groomerAvailabilitySlot.updateMany({
+          where: { id: { in: slotIds } },
+          data: { isBooked: false },
+        });
+      }
+
+      await tx.user.delete({ where: { id: userId } });
+    });
+
+    return { message: 'Account permanently deleted' };
+  }
+
   async block(adminId: string, id: string, dto: BlockUserDto) {
     if (adminId === id)
       throw new ForbiddenException('Admins cannot block themselves');

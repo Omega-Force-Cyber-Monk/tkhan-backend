@@ -24,6 +24,21 @@ import { ServicesService } from './services.service';
 @Controller('services')
 export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
+
+  @ApiBearerAuth()
+  @Roles('GROOMER')
+  @Get('me')
+  listMine(@CurrentUser() user: AuthUser, @Query() dto: ServiceQueryDto) {
+    return this.servicesService.listMine(user.sub, dto);
+  }
+
+  @ApiBearerAuth()
+  @Roles('GROOMER')
+  @Get('me/:id')
+  findMine(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.servicesService.findMine(user.sub, id);
+  }
+
   @Public() @Get() list(@Query() dto: ServiceQueryDto) {
     return this.servicesService.list(dto);
   }

@@ -24,6 +24,21 @@ import {
 @Controller('addons')
 export class AddonsController {
   constructor(private readonly addonsService: AddonsService) {}
+
+  @ApiBearerAuth()
+  @Roles('GROOMER')
+  @Get('me')
+  listMine(@CurrentUser() user: AuthUser, @Query() dto: AddonQueryDto) {
+    return this.addonsService.listMine(user.sub, dto);
+  }
+
+  @ApiBearerAuth()
+  @Roles('GROOMER')
+  @Get('me/:id')
+  findMine(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.addonsService.findMine(user.sub, id);
+  }
+
   @Public() @Get() list(@Query() dto: AddonQueryDto) {
     return this.addonsService.list(dto);
   }

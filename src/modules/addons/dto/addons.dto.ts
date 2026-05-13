@@ -18,4 +18,14 @@ export class CreateAddonDto {
   @ApiProperty() @IsNumber() @Min(1) durationMinutes: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
-export class UpdateAddonDto extends CreateAddonDto {}
+export class UpdateAddonDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() title?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) price?: number;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  durationMinutes?: number;
+  @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+}

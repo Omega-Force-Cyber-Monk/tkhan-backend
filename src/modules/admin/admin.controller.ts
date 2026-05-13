@@ -1,16 +1,49 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AdminService } from './admin.service';
-import { RejectGroomerDto, CreateAdminDto } from './dto/admin.dto';
+import {
+  AdminBlockUserDto,
+  AdminUserFilterDto,
+  CreateAdminDto,
+  RejectGroomerDto,
+} from './dto/admin.dto';
 @ApiTags('admin')
 @ApiBearerAuth()
 @Roles('ADMIN')
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Get('users')
+  users(@Query() dto: AdminUserFilterDto) {
+    return this.adminService.users(dto);
+  }
+
+  @Get('users/:id')
+  userDetail(@Param('id') id: string) {
+    return this.adminService.userDetail(id);
+  }
+
+  @Patch('users/:id/block')
+  blockUser(
+    @CurrentUser() admin: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AdminBlockUserDto,
+  ) {
+    return this.adminService.blockUser(admin.sub, id, dto);
+  }
+
   @Get('groomers/pending') pendingGroomers() {
     return this.adminService.pendingGroomers();
   }

@@ -1,10 +1,226 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateAdminDto } from './dto/admin.dto';
+import { paginate, paginated } from '../../common/utils/pagination';
+import { sanitizeUser } from '../../common/utils/sanitize-user';
+import {
+  AdminBlockUserDto,
+  AdminUserFilterDto,
+  CreateAdminDto,
+} from './dto/admin.dto';
+
+const safeUserSelect = {
+  id: true,
+  fullName: true,
+  phone: true,
+  email: true,
+  profileImage: true,
+  locationText: true,
+  state: true,
+  role: true,
+  emailVerified: true,
+  status: true,
+  isBlocked: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const bookingDetailInclude = {
+  services: true,
+  addons: true,
+  pet: true,
+  buyer: { select: safeUserSelect },
+  groomer: { select: safeUserSelect },
+  availabilitySlot: {
+    include: {
+      availability: true,
+    },
+  },
+  payments: { orderBy: { createdAt: 'desc' as const } },
+  payouts: { orderBy: { createdAt: 'desc' as const } },
+  reviews: {
+    orderBy: { createdAt: 'desc' as const },
+    include: {
+      reviewer: { select: safeUserSelect },
+      reviewee: { select: safeUserSelect },
+    },
+  },
+  supportTickets: {
+    orderBy: { createdAt: 'desc' as const },
+  },
+};
+
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async users(dto: AdminUserFilterDto) {
+    const where: any = {
+      ...(dto.role && { role: dto.role }),
+      ...(dto.status && { status: dto.status }),
+      ...(typeof dto.isBlocked === 'boolean' && { isBlocked: dto.isBlocked }),
+      ...(dto.search && {
+        OR: [
+          { fullName: { contains: dto.search, mode: 'insensitive' } },
+          { email: { contains: dto.search, mode: 'insensitive' } },
+          { phone: { contains: dto.search, mode: 'insensitive' } },
+        ],
+      }),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        ...paginate(dto.page, dto.limit),
+        orderBy: { [dto.sortBy]: dto.sortOrder },
+        select: {
+          ...safeUserSelect,
+          buyerProfile: true,
+          groomerProfile: true,
+          _count: {
+            select: {
+              bookingsAsBuyer: true,
+              bookingsAsGroomer: true,
+              reviewsReceived: true,
+              reviewsWritten: true,
+              tickets: true,
+            },
+          },
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+    return paginated(items, total, dto.page, dto.limit);
+  }
+
+  async userDetail(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        ...safeUserSelect,
+        buyerProfile: true,
+        groomerProfile: {
+          include: {
+            services: {
+              include: { category: true, addonMappings: true },
+              orderBy: { createdAt: 'desc' },
+            },
+            addons: { orderBy: { createdAt: 'desc' } },
+            availability: {
+              orderBy: { date: 'desc' },
+              take: 30,
+              include: { slots: { orderBy: { startTime: 'asc' } } },
+            },
+          },
+        },
+        pets: { orderBy: { createdAt: 'desc' } },
+        favoriteGroomers: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            groomer: {
+              include: {
+                user: { select: safeUserSelect },
+              },
+            },
+          },
+        },
+        reviewsReceived: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            reviewer: { select: safeUserSelect },
+            booking: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                status: true,
+                totalAmount: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+        reviewsWritten: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            reviewee: { select: safeUserSelect },
+            booking: {
+              select: {
+                id: true,
+                bookingNumber: true,
+                status: true,
+                totalAmount: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+        targetActionLogs: {
+          orderBy: { createdAt: 'desc' },
+          include: { admin: { select: safeUserSelect } },
+        },
+        _count: {
+          select: {
+            bookingsAsBuyer: true,
+            bookingsAsGroomer: true,
+            reviewsReceived: true,
+            reviewsWritten: true,
+            pets: true,
+            tickets: true,
+          },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const bookings = await this.prisma.booking.findMany({
+      where: {
+        OR: [{ buyerId: id }, { groomerId: id }],
+      },
+      orderBy: { createdAt: 'desc' },
+      include: bookingDetailInclude,
+    });
+
+    return {
+      user: sanitizeUser(user),
+      bookings,
+      feedback: {
+        received: user.reviewsReceived,
+        written: user.reviewsWritten,
+      },
+    };
+  }
+
+  async blockUser(adminId: string, id: string, dto: AdminBlockUserDto) {
+    if (adminId === id)
+      throw new ForbiddenException('Admins cannot block themselves');
+
+    const target = await this.prisma.user.findUnique({ where: { id } });
+    if (!target) throw new NotFoundException('User not found');
+
+    const isBlocked = dto.isBlocked ?? true;
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: {
+        isBlocked,
+        status: isBlocked ? 'SUSPENDED' : 'ACTIVE',
+      },
+      select: safeUserSelect,
+    });
+    await this.prisma.adminActionLog.create({
+      data: {
+        adminId,
+        targetUserId: id,
+        action: isBlocked ? 'USER_BLOCKED' : 'USER_UNBLOCKED',
+        note: dto.note,
+      },
+    });
+    return user;
+  }
+
   pendingGroomers() {
     return this.prisma.groomerProfile.findMany({
       where: { approvalStatus: 'PENDING' },

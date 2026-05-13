@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -78,6 +79,12 @@ export class UsersController {
     );
     return this.usersService.updateMe(user.sub, { profileImage });
   }
+
+  @Delete('me')
+  deleteMe(@CurrentUser() user: AuthUser) {
+    return this.usersService.deleteMe(user.sub);
+  }
+
   @Roles('ADMIN') @Get() list(@Query() dto: UserFilterDto) {
     return this.usersService.list(dto);
   }

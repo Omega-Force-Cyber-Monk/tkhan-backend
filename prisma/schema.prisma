@@ -141,6 +141,7 @@ model User {
   reviewsReceived        Review[]               @relation("ReviewsReceived")
   chatMessages           ChatMessage[]          @relation("MessageSender")
   notifications          Notification[]
+  pushDeviceTokens        PushDeviceToken[]
   tickets                SupportTicket[]        @relation("TicketRequester")
   ticketMessages         SupportTicketMessage[] @relation("TicketMessageSender")
   adminActionLogs        AdminActionLog[]        @relation("AdminActor")
@@ -503,6 +504,18 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([userId, readAt])
+}
+
+model PushDeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model SupportTicket {
