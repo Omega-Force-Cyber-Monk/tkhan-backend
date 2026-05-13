@@ -4,6 +4,7 @@ export class CreatePetDto {
   @ApiProperty() @IsString() name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() breed?: string;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) age?: number;
+  petImage?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() temperament?: string;
   @ApiProperty({ enum: ['DOG', 'CAT', 'RABBIT', 'OTHER'] })
   @IsEnum(['DOG', 'CAT', 'RABBIT', 'OTHER'])

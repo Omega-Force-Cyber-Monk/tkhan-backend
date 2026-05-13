@@ -304,6 +304,7 @@ model Pet {
   name        String
   breed       String?
   age         Int?
+  petImage    String?
   temperament String?
   petType     PetType
   petSize     PetSize
