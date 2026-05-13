@@ -49,6 +49,39 @@ export class ServicesService {
     return paginated(items, total, dto.page, dto.limit);
   }
 
+  async listWithAddons(dto: ServiceQueryDto) {
+    const where: any = {
+      ...(dto.categoryId && { categoryId: dto.categoryId }),
+      ...(dto.groomerId && { groomerId: dto.groomerId }),
+      ...(dto.search && {
+        title: { contains: dto.search, mode: 'insensitive' },
+      }),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.service.findMany({
+        where,
+        ...paginate(dto.page, dto.limit),
+        orderBy: { [dto.sortBy]: dto.sortOrder },
+        include: {
+          category: true,
+          addonMappings: {
+            include: { addon: true },
+          },
+        },
+      }),
+      this.prisma.service.count({ where }),
+    ]);
+    return paginated(
+      items.map(({ addonMappings, ...service }) => ({
+        ...service,
+        addons: addonMappings.map(({ addon }) => addon),
+      })),
+      total,
+      dto.page,
+      dto.limit,
+    );
+  }
+
   async listMine(userId: string, dto: ServiceQueryDto) {
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },

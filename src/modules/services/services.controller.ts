@@ -51,6 +51,12 @@ export class ServicesController {
   }
 
   @Public()
+  @Get('with-addons')
+  listWithAddons(@Query() dto: ServiceQueryDto) {
+    return this.servicesService.listWithAddons(dto);
+  }
+
+  @Public()
   @Get(':id/with-addons')
   findWithAddons(@Param('id') id: string) {
     return this.servicesService.findWithAddons(id);
