@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsArray,
   IsBoolean,
   IsNumber,
   IsOptional,
@@ -20,10 +19,6 @@ export class CreateServiceDto {
   @ApiProperty() @IsString() description: string;
   @ApiProperty() @IsNumber() @Min(1) durationMinutes: number;
   @ApiProperty() @IsNumber() @Min(0) price: number;
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  addonIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
 export class UpdateServiceDto {
@@ -36,9 +31,5 @@ export class UpdateServiceDto {
   @Min(1)
   durationMinutes?: number;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) price?: number;
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  addonIds?: string[];
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }

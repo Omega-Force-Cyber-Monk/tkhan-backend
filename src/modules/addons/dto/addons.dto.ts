@@ -12,6 +12,7 @@ export class AddonQueryDto extends PaginationDto {
   @ApiPropertyOptional() @IsOptional() @IsString() groomerId?: string;
 }
 export class CreateAddonDto {
+  @ApiProperty() @IsString() serviceId: string;
   @ApiProperty() @IsString() title: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiProperty() @IsNumber() @Min(0) price: number;
@@ -19,6 +20,7 @@ export class CreateAddonDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
 }
 export class UpdateAddonDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() serviceId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() title?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsNumber() @Min(0) price?: number;

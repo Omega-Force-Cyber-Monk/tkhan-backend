@@ -78,6 +78,7 @@ export class BookingsService {
               id: { in: dto.addonIds },
               groomerId: groomer.id,
               active: true,
+              serviceMappings: { some: { serviceId: service.id } },
             },
           })
         : [];

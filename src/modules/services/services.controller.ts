@@ -34,6 +34,13 @@ export class ServicesController {
 
   @ApiBearerAuth()
   @Roles('GROOMER')
+  @Get('me/:id/with-addons')
+  findMineWithAddons(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.servicesService.findMineWithAddons(user.sub, id);
+  }
+
+  @ApiBearerAuth()
+  @Roles('GROOMER')
   @Get('me/:id')
   findMine(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.servicesService.findMine(user.sub, id);
@@ -42,6 +49,19 @@ export class ServicesController {
   @Public() @Get() list(@Query() dto: ServiceQueryDto) {
     return this.servicesService.list(dto);
   }
+
+  @Public()
+  @Get(':id/with-addons')
+  findWithAddons(@Param('id') id: string) {
+    return this.servicesService.findWithAddons(id);
+  }
+
+  @Public()
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.servicesService.findOne(id);
+  }
+
   @ApiBearerAuth() @Roles('GROOMER') @Post() create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateServiceDto,
