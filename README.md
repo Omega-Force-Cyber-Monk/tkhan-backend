@@ -39,11 +39,17 @@ account.
 
 Set these environment variables in Render:
 
-- `DATABASE_URL`
+- `DATABASE_URL` - Neon pooled/runtime URL
+- `MIGRATE_DATABASE_URL` - Neon direct/non-pooler URL for Prisma migrations
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
+
+Prisma CLI commands use `MIGRATE_DATABASE_URL` when it is set and fall back to
+`DATABASE_URL` otherwise. On Neon, keep `DATABASE_URL` pointed at the pooled
+host for the running API, but set `MIGRATE_DATABASE_URL` to the direct database
+host so `prisma migrate deploy` does not run through the pooler.
 
 Use this build command:
 
