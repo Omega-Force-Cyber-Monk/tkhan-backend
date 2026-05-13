@@ -144,8 +144,13 @@ export class BuyerService {
     );
   }
   groomerProfile(id: string) {
-    return this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { id },
+    return this.prisma.groomerProfile.findFirstOrThrow({
+      where: {
+        id,
+        approvalStatus: 'APPROVED',
+        availableForBookings: true,
+        user: { isBlocked: false, status: 'ACTIVE' },
+      },
       include: {
         user: true,
         services: {

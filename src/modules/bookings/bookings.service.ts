@@ -205,8 +205,8 @@ export class BookingsService {
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
-    if (booking.status !== 'REQUESTED')
-      throw new BadRequestException('Only requested bookings can be accepted');
+    if (!['PENDING', 'REQUESTED'].includes(booking.status))
+      throw new BadRequestException('Only pending bookings can be accepted');
     const updated = await this.prisma.booking.update({
       where: { id },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
@@ -227,8 +227,8 @@ export class BookingsService {
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
-    if (booking.status !== 'REQUESTED')
-      throw new BadRequestException('Only requested bookings can be rejected');
+    if (!['PENDING', 'REQUESTED'].includes(booking.status))
+      throw new BadRequestException('Only pending bookings can be rejected');
     await this.prisma.booking.update({
       where: { id },
       data: {

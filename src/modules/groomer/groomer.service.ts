@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { UpdateGroomerProfileDto } from './dto/groomer.dto';
 @Injectable()
@@ -6,6 +6,9 @@ export class GroomerService {
   constructor(private readonly prisma: PrismaService) {}
   async updateProfile(userId: string, dto: UpdateGroomerProfileDto) {
     const { fullName, phone, profileImage, ...profile } = dto;
+    if (profile.availableForBookings === true) {
+      await this.assertCanEnableBookings(userId);
+    }
     await this.prisma.user.update({
       where: { id: userId },
       data: { fullName, phone, profileImage },
@@ -83,5 +86,47 @@ export class GroomerService {
       thisMonthIncome: month._sum.amount ?? 0,
       payoutHistory,
     };
+  }
+
+  private async assertCanEnableBookings(userId: string) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+      include: {
+        _count: {
+          select: {
+            services: { where: { active: true } },
+            paymentMethods: true,
+          },
+        },
+      },
+    });
+    if (groomer.approvalStatus !== 'APPROVED') {
+      throw new BadRequestException('Groomer approval required');
+    }
+    if (groomer._count.services === 0) {
+      throw new BadRequestException(
+        'Add at least one active service before enabling availability',
+      );
+    }
+    if (groomer._count.paymentMethods === 0) {
+      throw new BadRequestException(
+        'Add a payment method before enabling availability',
+      );
+    }
+    const futureSlotCount = await this.prisma.groomerAvailabilitySlot.count({
+      where: {
+        isBooked: false,
+        startTime: { gt: new Date() },
+        availability: {
+          groomerId: groomer.id,
+          isAvailable: true,
+        },
+      },
+    });
+    if (futureSlotCount === 0) {
+      throw new BadRequestException(
+        'Add at least one future availability slot before enabling availability',
+      );
+    }
   }
 }

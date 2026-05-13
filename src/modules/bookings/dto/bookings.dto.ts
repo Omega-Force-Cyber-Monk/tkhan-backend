@@ -4,6 +4,7 @@ import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export const BOOKING_STATUSES = [
   'PAYMENT_PENDING',
+  'PENDING',
   'REQUESTED',
   'ACCEPTED',
   'REJECTED',
