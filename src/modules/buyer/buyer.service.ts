@@ -30,6 +30,8 @@ export class BuyerService {
   async searchGroomers(dto: GroomerSearchDto) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
+    const search = dto.search?.trim();
+    const state = dto.state?.trim();
     const sortBy = [
       'createdAt',
       'updatedAt',
@@ -39,6 +41,7 @@ export class BuyerService {
       ? dto.sortBy
       : 'createdAt';
     const sortOrder = dto.sortOrder ?? 'desc';
+    const filters: any[] = [];
     const serviceFilterRequested =
       dto.serviceId !== undefined ||
       dto.categoryId !== undefined ||
@@ -53,18 +56,38 @@ export class BuyerService {
             },
           }
         : {};
-    const where: any = {
-      approvalStatus: 'APPROVED',
-      availableForBookings: true,
-      user: {
-        isBlocked: false,
-        status: 'ACTIVE',
-        ...(dto.state && { state: dto.state }),
-        ...(dto.search && {
-          fullName: { contains: dto.search, mode: 'insensitive' },
-        }),
-      },
-      ...(serviceFilterRequested && {
+    if (search) {
+      filters.push({
+        OR: [
+          { businessName: { contains: search, mode: 'insensitive' } },
+          { serviceArea: { contains: search, mode: 'insensitive' } },
+          { businessAddress: { contains: search, mode: 'insensitive' } },
+          { shortBio: { contains: search, mode: 'insensitive' } },
+          { about: { contains: search, mode: 'insensitive' } },
+          { user: { fullName: { contains: search, mode: 'insensitive' } } },
+          { user: { email: { contains: search, mode: 'insensitive' } } },
+          { user: { locationText: { contains: search, mode: 'insensitive' } } },
+          {
+            services: {
+              some: {
+                active: true,
+                OR: [
+                  { title: { contains: search, mode: 'insensitive' } },
+                  { description: { contains: search, mode: 'insensitive' } },
+                  {
+                    category: {
+                      name: { contains: search, mode: 'insensitive' },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+    }
+    if (serviceFilterRequested) {
+      filters.push({
         services: {
           some: {
             active: true,
@@ -73,7 +96,22 @@ export class BuyerService {
             ...priceFilter,
           },
         },
-      }),
+      });
+    }
+    const where: any = {
+      approvalStatus: 'APPROVED',
+      availableForBookings: true,
+      user: {
+        isBlocked: false,
+        status: 'ACTIVE',
+        ...(state && {
+          OR: [
+            { state: { equals: state, mode: 'insensitive' } },
+            { locationText: { contains: state, mode: 'insensitive' } },
+          ],
+        }),
+      },
+      ...(filters.length && { AND: filters }),
     };
     let items;
     try {
