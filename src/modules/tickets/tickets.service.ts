@@ -9,11 +9,22 @@ export class TicketsService {
     private readonly notifications: NotificationsService,
   ) {}
   async create(userId: string, dto: CreateTicketDto) {
+    const relatedBookingId = dto.relatedBookingId?.trim() || undefined;
+    let validRelatedBookingId: string | undefined;
+    if (relatedBookingId) {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: relatedBookingId },
+        select: { buyerId: true, groomerId: true },
+      });
+      if (booking?.buyerId === userId || booking?.groomerId === userId) {
+        validRelatedBookingId = relatedBookingId;
+      }
+    }
     return this.prisma.supportTicket.create({
       data: {
         requesterId: userId,
         subject: dto.subject,
-        relatedBookingId: dto.relatedBookingId,
+        relatedBookingId: validRelatedBookingId,
         messages: {
           create: {
             senderId: userId,

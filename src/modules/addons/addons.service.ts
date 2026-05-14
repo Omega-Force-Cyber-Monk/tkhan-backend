@@ -37,7 +37,10 @@ export class AddonsService {
     });
   }
   async list(dto: AddonQueryDto) {
-    const where: any = { ...(dto.groomerId && { groomerId: dto.groomerId }) };
+    const where: any = {
+      active: true,
+      ...(dto.groomerId && { groomerId: dto.groomerId }),
+    };
     const [items, total] = await Promise.all([
       this.prisma.serviceAddon.findMany({
         where,

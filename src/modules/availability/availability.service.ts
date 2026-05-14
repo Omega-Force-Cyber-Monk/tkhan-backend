@@ -6,8 +6,12 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import {
   AvailabilityQueryDto,
+  AvailabilitySlotDto,
+  UpdateAvailabilitySlotDto,
   UpsertAvailabilityDto,
 } from './dto/availability.dto';
+
+const SLOT_MINUTES = 60;
 
 @Injectable()
 export class AvailabilityService {
@@ -18,9 +22,10 @@ export class AvailabilityService {
     });
     if (groomer.approvalStatus !== 'APPROVED')
       throw new ForbiddenException('Groomer approval required');
-    const date = new Date(dto.date);
+    const date = this.parseDateOnly(dto.date);
     if (date < new Date(new Date().toISOString().slice(0, 10)))
       throw new BadRequestException('Availability cannot be set in the past');
+    const slots = this.expandHourlySlots(dto.date, dto.slots);
     return this.prisma.$transaction(async (tx) => {
       const availability = await tx.groomerAvailability.upsert({
         where: { groomerId_date: { groomerId: groomer.id, date } },
@@ -41,12 +46,12 @@ export class AvailabilityService {
       await tx.groomerAvailabilitySlot.deleteMany({
         where: { availabilityId: availability.id },
       });
-      if (dto.slots.length)
+      if (slots.length)
         await tx.groomerAvailabilitySlot.createMany({
-          data: dto.slots.map((slot) => ({
+          data: slots.map((slot) => ({
             availabilityId: availability.id,
-            startTime: new Date(slot.startTime),
-            endTime: new Date(slot.endTime),
+            startTime: slot.startTime,
+            endTime: slot.endTime,
           })),
         });
       return tx.groomerAvailability.findUnique({
@@ -59,13 +64,19 @@ export class AvailabilityService {
     return this.prisma.groomerAvailability.findMany({
       where: {
         ...(dto.groomerId && { groomerId: dto.groomerId }),
+        ...(dto.panel === 'BUYER' && { isAvailable: true }),
         date: {
-          ...(dto.from && { gte: new Date(dto.from) }),
-          ...(dto.to && { lte: new Date(dto.to) }),
+          ...(dto.from && { gte: this.parseDateOnly(dto.from) }),
+          ...(dto.to && { lte: this.parseDateOnly(dto.to) }),
         },
       },
       orderBy: { date: 'asc' },
-      include: { slots: { orderBy: { startTime: 'asc' } } },
+      include: {
+        slots: {
+          where: dto.panel === 'BUYER' ? { isBooked: false } : undefined,
+          orderBy: { startTime: 'asc' },
+        },
+      },
     });
   }
   async toggle(userId: string, id: string, isAvailable: boolean) {
@@ -83,6 +94,41 @@ export class AvailabilityService {
       data: { isAvailable },
     });
   }
+  async updateSlot(
+    userId: string,
+    slotId: string,
+    dto: UpdateAvailabilitySlotDto,
+  ) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+    });
+    const slot = await this.prisma.groomerAvailabilitySlot.findUniqueOrThrow({
+      where: { id: slotId },
+      include: { availability: true },
+    });
+    if (slot.availability.groomerId !== groomer.id)
+      throw new ForbiddenException('Slot is owned by another groomer');
+    if (slot.isBooked)
+      throw new BadRequestException('Cannot update a booked slot');
+
+    const replacements = this.expandHourlySlots(
+      slot.availability.date.toISOString().slice(0, 10),
+      [dto],
+    );
+    if (replacements.length !== 1)
+      throw new BadRequestException(
+        'Specific slot update must be exactly 1 hour',
+      );
+    const [replacement] = replacements;
+
+    return this.prisma.groomerAvailabilitySlot.update({
+      where: { id: slotId },
+      data: {
+        startTime: replacement.startTime,
+        endTime: replacement.endTime,
+      },
+    });
+  }
   async removeSlot(userId: string, slotId: string) {
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },
@@ -98,5 +144,60 @@ export class AvailabilityService {
     return this.prisma.groomerAvailabilitySlot.delete({
       where: { id: slotId },
     });
+  }
+
+  private expandHourlySlots(date: string, slots: AvailabilitySlotDto[]) {
+    const expanded: { startTime: Date; endTime: Date }[] = [];
+    const seen = new Set<string>();
+
+    for (const slot of slots) {
+      const startTime = this.parseSlotBoundary(date, slot.startTime);
+      const endTime = this.parseSlotBoundary(date, slot.endTime);
+      if (endTime <= startTime)
+        throw new BadRequestException('Slot endTime must be after startTime');
+
+      const durationMinutes =
+        (endTime.getTime() - startTime.getTime()) / (60 * 1000);
+      if (!Number.isInteger(durationMinutes) || durationMinutes % SLOT_MINUTES)
+        throw new BadRequestException(
+          'Slot range must be divisible into 1 hour slots',
+        );
+
+      for (
+        let cursor = startTime.getTime();
+        cursor < endTime.getTime();
+        cursor += SLOT_MINUTES * 60 * 1000
+      ) {
+        const next = cursor + SLOT_MINUTES * 60 * 1000;
+        const key = `${cursor}-${next}`;
+        if (seen.has(key))
+          throw new BadRequestException('Duplicate availability slot');
+        seen.add(key);
+        expanded.push({
+          startTime: new Date(cursor),
+          endTime: new Date(next),
+        });
+      }
+    }
+
+    return expanded.sort(
+      (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+    );
+  }
+
+  private parseDateOnly(date: string) {
+    return new Date(`${date}T00:00:00.000Z`);
+  }
+
+  private parseSlotBoundary(date: string, time: string) {
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      return new Date(`${date}T${time}:00.000Z`);
+    }
+
+    const parsed = new Date(time);
+    if (Number.isNaN(parsed.getTime()))
+      throw new BadRequestException('Invalid slot time');
+
+    return parsed;
   }
 }

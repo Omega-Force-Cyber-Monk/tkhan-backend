@@ -42,7 +42,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     if (this.pendingRefundTimer) clearInterval(this.pendingRefundTimer);
   }
 
-  async createCheckoutSession(bookingId: string, buyerId: string) {
+  async createCheckoutSession(
+    bookingId: string,
+    buyerId: string,
+    apiBaseUrl?: string,
+  ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id: bookingId },
     });
@@ -64,10 +68,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const session = await this.stripe.checkout.sessions.create({
       mode: 'payment',
       success_url:
-        (this.config.get('FRONTEND_URL') ?? 'http://localhost:5173') +
-        '/bookings/' +
-        bookingId +
-        '/success',
+        (apiBaseUrl ?? this.config.get('APP_URL') ?? 'http://localhost:3000') +
+        '/api/v1/payments/checkout/success?session_id={CHECKOUT_SESSION_ID}',
       cancel_url:
         (this.config.get('FRONTEND_URL') ?? 'http://localhost:5173') +
         '/bookings/' +
@@ -91,6 +93,55 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     });
     return { checkoutUrl: session.url, sessionId: session.id };
   }
+
+  async confirmBookingCheckout(bookingId: string, buyerId: string) {
+    const booking = await this.prisma.booking.findUniqueOrThrow({
+      where: { id: bookingId },
+      include: {
+        payments: {
+          where: { stripeCheckoutSessionId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (booking.buyerId !== buyerId)
+      throw new BadRequestException('Booking belongs to another buyer');
+    const payment = booking.payments[0];
+    if (!payment?.stripeCheckoutSessionId)
+      throw new BadRequestException('No checkout session found for booking');
+
+    return this.confirmCheckoutSession(payment.stripeCheckoutSessionId);
+  }
+
+  async confirmCheckoutSession(sessionId: string) {
+    if (!sessionId)
+      throw new BadRequestException('Missing checkout session id');
+
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== 'paid')
+      throw new BadRequestException('Checkout session is not paid');
+
+    const paymentId = session.metadata?.paymentId;
+    const bookingId = session.metadata?.bookingId;
+    if (!paymentId || !bookingId)
+      throw new BadRequestException('Checkout session metadata is missing');
+
+    await this.markPaymentSucceeded(
+      String(paymentId),
+      this.paymentIntentId(session.payment_intent),
+    );
+
+    return {
+      bookingId,
+      redirectUrl:
+        (this.config.get('FRONTEND_URL') ?? 'http://localhost:5173') +
+        '/bookings/' +
+        bookingId +
+        '/success',
+    };
+  }
+
   async handleWebhook(rawBody: Buffer, signature: string) {
     let event: any;
     try {
@@ -106,7 +157,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       const session = event.data.object;
       await this.markPaymentSucceeded(
         String(session.metadata?.paymentId),
-        String(session.payment_intent),
+        this.paymentIntentId(session.payment_intent),
       );
     }
     if (event.type === 'payment_intent.payment_failed') {
@@ -167,6 +218,18 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       { bookingId: booking.id },
     );
     return payment;
+  }
+
+  private paymentIntentId(paymentIntent: unknown) {
+    if (typeof paymentIntent === 'string') return paymentIntent;
+    if (
+      paymentIntent &&
+      typeof paymentIntent === 'object' &&
+      'id' in paymentIntent
+    ) {
+      return String((paymentIntent as { id: unknown }).id);
+    }
+    throw new BadRequestException('Checkout session payment intent is missing');
   }
   async refundBooking(bookingId: string, reason?: string) {
     const payment = await this.prisma.payment.findFirst({

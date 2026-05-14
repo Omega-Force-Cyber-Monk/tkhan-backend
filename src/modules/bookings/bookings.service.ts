@@ -30,6 +30,25 @@ const bookingBuyerSelect = {
   updatedAt: true,
 };
 
+const bookingGroomerSelect = {
+  ...bookingBuyerSelect,
+  groomerProfile: {
+    select: {
+      id: true,
+      businessName: true,
+      serviceArea: true,
+      businessAddress: true,
+      experienceYears: true,
+      shortBio: true,
+      about: true,
+      certifications: true,
+      serviceModes: true,
+      availableForBookings: true,
+      approvalStatus: true,
+    },
+  },
+};
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -155,6 +174,7 @@ export class BookingsService {
           addons: true,
           pet: true,
           buyer: { select: bookingBuyerSelect },
+          groomer: { select: bookingGroomerSelect },
         },
       }),
       this.prisma.booking.count({ where }),
@@ -170,6 +190,7 @@ export class BookingsService {
         addons: true,
         pet: true,
         buyer: { select: bookingBuyerSelect },
+        groomer: { select: bookingGroomerSelect },
         payments: true,
         payouts: { orderBy: { createdAt: 'desc' } },
         reviews: true,

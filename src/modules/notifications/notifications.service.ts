@@ -99,10 +99,39 @@ export class NotificationsService {
     return paginated(items, total, dto.page, dto.limit);
   }
   async markRead(userId: string, id: string) {
-    return this.prisma.notification.update({
+    const readAt = new Date();
+    if (id.startsWith('dummy-notification-')) {
+      const dummy = this.dummyList(userId).items.find(
+        (notification) => notification.id === id,
+      );
+      return {
+        ...(dummy ?? {
+          id,
+          userId,
+          type: 'ADMIN_ACTION',
+          title: 'Notification',
+          body: null,
+          data: null,
+          createdAt: readAt,
+        }),
+        readAt,
+      };
+    }
+
+    const result = await this.prisma.notification.updateMany({
       where: { id, userId },
-      data: { readAt: new Date() },
+      data: { readAt },
     });
+    if (result.count === 0) {
+      return {
+        id,
+        userId,
+        readAt,
+        updated: false,
+      };
+    }
+
+    return this.prisma.notification.findUniqueOrThrow({ where: { id } });
   }
 
   async markAllRead(userId: string) {

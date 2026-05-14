@@ -29,6 +29,7 @@ export class ServicesService {
 
   async list(dto: ServiceQueryDto) {
     const where: any = {
+      active: true,
       ...(dto.categoryId && { categoryId: dto.categoryId }),
       ...(dto.groomerId && { groomerId: dto.groomerId }),
       ...(dto.search && {
@@ -51,6 +52,7 @@ export class ServicesService {
 
   async listWithAddons(dto: ServiceQueryDto) {
     const where: any = {
+      active: true,
       ...(dto.categoryId && { categoryId: dto.categoryId }),
       ...(dto.groomerId && { groomerId: dto.groomerId }),
       ...(dto.search && {
@@ -65,6 +67,7 @@ export class ServicesService {
         include: {
           category: true,
           addonMappings: {
+            where: { addon: { active: true } },
             include: { addon: true },
           },
         },
@@ -87,6 +90,13 @@ export class ServicesService {
       where: { userId },
     });
     return this.list({ ...dto, groomerId: groomer.id });
+  }
+
+  async listMineWithAddons(userId: string, dto: ServiceQueryDto) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+    });
+    return this.listWithAddons({ ...dto, groomerId: groomer.id });
   }
 
   async findMine(userId: string, id: string) {
@@ -116,17 +126,18 @@ export class ServicesService {
 
   async findOne(id: string) {
     return this.prisma.service.findUniqueOrThrow({
-      where: { id },
+      where: { id, active: true },
       include: { category: true },
     });
   }
 
   async findWithAddons(id: string) {
     return this.prisma.service.findUniqueOrThrow({
-      where: { id },
+      where: { id, active: true },
       include: {
         category: true,
         addonMappings: {
+          where: { addon: { active: true } },
           include: { addon: true },
         },
       },

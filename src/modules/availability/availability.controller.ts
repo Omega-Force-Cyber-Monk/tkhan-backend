@@ -16,6 +16,7 @@ import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { AvailabilityService } from './availability.service';
 import {
   AvailabilityQueryDto,
+  UpdateAvailabilitySlotDto,
   UpsertAvailabilityDto,
 } from './dto/availability.dto';
 
@@ -43,6 +44,13 @@ export class AvailabilityController {
     @Param('id') id: string,
   ) {
     return this.availabilityService.toggle(user.sub, id, false);
+  }
+  @ApiBearerAuth() @Roles('GROOMER') @Patch('slots/:slotId') updateSlot(
+    @CurrentUser() user: AuthUser,
+    @Param('slotId') slotId: string,
+    @Body() dto: UpdateAvailabilitySlotDto,
+  ) {
+    return this.availabilityService.updateSlot(user.sub, slotId, dto);
   }
   @ApiBearerAuth() @Roles('GROOMER') @Delete('slots/:slotId') removeSlot(
     @CurrentUser() user: AuthUser,

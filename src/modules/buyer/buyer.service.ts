@@ -159,7 +159,16 @@ export class BuyerService {
             addonMappings: { include: { addon: true } },
           },
         },
-        availability: { include: { slots: true } },
+        availability: {
+          where: { isAvailable: true },
+          include: {
+            slots: {
+              where: { isBooked: false },
+              orderBy: { startTime: 'asc' },
+            },
+          },
+          orderBy: { date: 'asc' },
+        },
       },
     });
   }

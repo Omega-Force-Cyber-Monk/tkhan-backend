@@ -50,10 +50,11 @@ export class ServicesController {
     return this.servicesService.list(dto);
   }
 
-  @Public()
+  @ApiBearerAuth()
+  @Roles('GROOMER')
   @Get('with-addons')
-  listWithAddons(@Query() dto: ServiceQueryDto) {
-    return this.servicesService.listWithAddons(dto);
+  listWithAddons(@CurrentUser() user: AuthUser, @Query() dto: ServiceQueryDto) {
+    return this.servicesService.listMineWithAddons(user.sub, dto);
   }
 
   @Public()

@@ -114,15 +114,43 @@ const bookingExample = {
     createdAt: '2026-05-10T09:00:00.000Z',
     updatedAt: '2026-05-10T09:00:00.000Z',
   },
+  groomer: {
+    id: 'groomer-user-uuid',
+    fullName: 'Sarah Groomer',
+    email: 'groomer@example.com',
+    phone: '+15559876543',
+    profileImage: 'https://res.cloudinary.com/demo/image/upload/groomer.jpg',
+    locationText: 'Austin, TX',
+    state: 'TX',
+    role: 'GROOMER',
+    status: 'ACTIVE',
+    createdAt: '2026-05-09T09:00:00.000Z',
+    updatedAt: '2026-05-09T09:00:00.000Z',
+    groomerProfile: {
+      id: 'groomer-profile-uuid',
+      businessName: 'Sarah Pet Spa',
+      serviceArea: 'Austin',
+      businessAddress: '44 Grooming Lane',
+      experienceYears: 5,
+      shortBio: 'Gentle grooming for dogs and cats.',
+      about: 'Certified groomer with in-home grooming experience.',
+      certifications: [],
+      serviceModes: ['IN_HOME'],
+      availableForBookings: true,
+      approvalStatus: 'APPROVED',
+    },
+  },
 };
 
 const createdBookingExample = {
   ...bookingExample,
   pet: undefined,
   buyer: undefined,
+  groomer: undefined,
 };
 delete createdBookingExample.pet;
 delete createdBookingExample.buyer;
+delete createdBookingExample.groomer;
 
 const bookingDetailExample = {
   ...bookingExample,
