@@ -1,13 +1,31 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { CreateTicketDto, ReplyTicketDto } from './dto/tickets.dto';
+import {
+  CreateTicketDto,
+  ReplyTicketDto,
+  ReportIssueDto,
+  REPORT_ISSUE_PROBLEMS,
+} from './dto/tickets.dto';
 @Injectable()
 export class TicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
   ) {}
+  reportOptions() {
+    return REPORT_ISSUE_PROBLEMS.map((problem) => ({
+      label: problem,
+      value: problem,
+    }));
+  }
+  reportIssue(userId: string, dto: ReportIssueDto) {
+    return this.create(userId, {
+      subject: dto.problem,
+      message: dto.details,
+      relatedBookingId: dto.relatedBookingId,
+    });
+  }
   async create(userId: string, dto: CreateTicketDto) {
     const relatedBookingId = dto.relatedBookingId?.trim() || undefined;
     let validRelatedBookingId: string | undefined;
@@ -42,6 +60,35 @@ export class TicketsService {
       include: { messages: true },
       orderBy: { createdAt: 'desc' },
     });
+  }
+  async detail(userId: string, role: string, ticketId: string) {
+    const ticket = await this.prisma.supportTicket.findUniqueOrThrow({
+      where: { id: ticketId },
+      include: {
+        messages: { orderBy: { createdAt: 'asc' } },
+        requester: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            phone: true,
+            profileImage: true,
+            role: true,
+            status: true,
+          },
+        },
+        relatedBooking: {
+          include: {
+            services: true,
+            addons: true,
+            pet: true,
+          },
+        },
+      },
+    });
+    if (role !== 'ADMIN' && ticket.requesterId !== userId)
+      throw new ForbiddenException('Ticket access denied');
+    return ticket;
   }
   async reply(
     userId: string,

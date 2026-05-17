@@ -36,19 +36,14 @@ export class AvailabilityService {
         },
         update: { isAvailable: dto.isAvailable ?? true },
       });
-      const booked = await tx.groomerAvailabilitySlot.count({
-        where: { availabilityId: availability.id, isBooked: true },
-      });
-      if (booked > 0)
-        throw new BadRequestException(
-          'Cannot replace slots while a slot is booked',
-        );
-      await tx.groomerAvailabilitySlot.deleteMany({
-        where: { availabilityId: availability.id },
-      });
-      if (slots.length)
+      const slotsToCreate = await this.filterNewSlots(
+        tx,
+        availability.id,
+        slots,
+      );
+      if (slotsToCreate.length)
         await tx.groomerAvailabilitySlot.createMany({
-          data: slots.map((slot) => ({
+          data: slotsToCreate.map((slot) => ({
             availabilityId: availability.id,
             startTime: slot.startTime,
             endTime: slot.endTime,
@@ -120,6 +115,12 @@ export class AvailabilityService {
         'Specific slot update must be exactly 1 hour',
       );
     const [replacement] = replacements;
+    await this.assertSlotDoesNotOverlap(
+      this.prisma,
+      slot.availabilityId,
+      replacement,
+      slotId,
+    );
 
     return this.prisma.groomerAvailabilitySlot.update({
       where: { id: slotId },
@@ -144,6 +145,76 @@ export class AvailabilityService {
     return this.prisma.groomerAvailabilitySlot.delete({
       where: { id: slotId },
     });
+  }
+
+  private async filterNewSlots(
+    tx: any,
+    availabilityId: string,
+    slots: { startTime: Date; endTime: Date }[],
+  ) {
+    const existingSlots = await tx.groomerAvailabilitySlot.findMany({
+      where: { availabilityId },
+      select: { id: true, startTime: true, endTime: true },
+    });
+    const slotsToCreate: { startTime: Date; endTime: Date }[] = [];
+
+    for (const slot of slots) {
+      const exactMatch = existingSlots.some((existing) =>
+        this.isSameSlot(existing, slot),
+      );
+      if (exactMatch) continue;
+
+      const overlapsExisting = existingSlots.some((existing) =>
+        this.slotsOverlap(existing, slot),
+      );
+      const overlapsNew = slotsToCreate.some((existing) =>
+        this.slotsOverlap(existing, slot),
+      );
+      if (overlapsExisting || overlapsNew)
+        throw new BadRequestException(
+          'Availability slot overlaps an existing slot',
+        );
+
+      slotsToCreate.push(slot);
+    }
+
+    return slotsToCreate;
+  }
+
+  private async assertSlotDoesNotOverlap(
+    prisma: PrismaService,
+    availabilityId: string,
+    slot: { startTime: Date; endTime: Date },
+    excludedSlotId: string,
+  ) {
+    const existingSlots = await prisma.groomerAvailabilitySlot.findMany({
+      where: {
+        availabilityId,
+        id: { not: excludedSlotId },
+      },
+      select: { startTime: true, endTime: true },
+    });
+    if (existingSlots.some((existing) => this.slotsOverlap(existing, slot)))
+      throw new BadRequestException(
+        'Availability slot overlaps an existing slot',
+      );
+  }
+
+  private isSameSlot(
+    a: { startTime: Date; endTime: Date },
+    b: { startTime: Date; endTime: Date },
+  ) {
+    return (
+      a.startTime.getTime() === b.startTime.getTime() &&
+      a.endTime.getTime() === b.endTime.getTime()
+    );
+  }
+
+  private slotsOverlap(
+    a: { startTime: Date; endTime: Date },
+    b: { startTime: Date; endTime: Date },
+  ) {
+    return a.startTime < b.endTime && b.startTime < a.endTime;
   }
 
   private expandHourlySlots(date: string, slots: AvailabilitySlotDto[]) {

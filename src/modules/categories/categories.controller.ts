@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UploadsService } from '../uploads/uploads.service';
 import { CategoriesService } from './categories.service';
 import {
+  CategoryGroomerQueryDto,
   CategoryQueryDto,
   CreateCategoryDto,
   UpdateCategoryDto,
@@ -31,6 +32,12 @@ export class CategoriesController {
   ) {}
   @Public() @Get() list(@Query() dto: CategoryQueryDto) {
     return this.categoriesService.list(dto);
+  }
+  @Public() @Get(':id/groomers') groomers(
+    @Param('id') id: string,
+    @Query() dto: CategoryGroomerQueryDto,
+  ) {
+    return this.categoriesService.groomers(id, dto);
   }
   @Public() @Get(':id') findOne(@Param('id') id: string) {
     return this.categoriesService.findOne(id);
