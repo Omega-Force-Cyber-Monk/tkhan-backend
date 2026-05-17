@@ -93,4 +93,4 @@ npm run start:prod
 
 - Stripe Connect transfers are implemented when a groomer has a default payout-enabled payment method with `stripeAccountId`. Without that external onboarding, payouts remain `PENDING`.
 - Email sending is intentionally scaffolded: verification/reset token delivery should be wired to a mail provider before production launch.
-- All sensitive user fields are stripped by user-facing services.
+- All sensitive user fields are stripped by user-facing services ..
