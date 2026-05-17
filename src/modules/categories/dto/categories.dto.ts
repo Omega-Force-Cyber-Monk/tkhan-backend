@@ -3,6 +3,7 @@ import {
   ApiProperty,
   ApiPropertyOptional,
 } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { Allow, IsBoolean, IsOptional, IsString } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
@@ -23,6 +24,36 @@ export class CreateCategoryDto {
   @Allow()
   image?: unknown;
 
-  @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  active?: boolean;
 }
-export class UpdateCategoryDto extends CreateCategoryDto {}
+export class UpdateCategoryDto {
+  @ApiPropertyOptional({ example: 'Full Grooming' })
+  @IsOptional()
+  @IsString()
+  name?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Allow()
+  image?: unknown;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  active?: boolean;
+}

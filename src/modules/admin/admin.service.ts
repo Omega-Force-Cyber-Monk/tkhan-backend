@@ -239,8 +239,9 @@ export class AdminService {
     return { pending, approved, rejected };
   }
   async approveGroomer(adminId: string, groomerId: string) {
+    const existingGroomer = await this.findGroomerByProfileOrUserId(groomerId);
     const groomer = await this.prisma.groomerProfile.update({
-      where: { id: groomerId },
+      where: { id: existingGroomer.id },
       data: {
         approvalStatus: 'APPROVED',
         approvedAt: new Date(),
@@ -260,8 +261,9 @@ export class AdminService {
     return groomer;
   }
   async rejectGroomer(adminId: string, groomerId: string, reason: string) {
+    const existingGroomer = await this.findGroomerByProfileOrUserId(groomerId);
     const groomer = await this.prisma.groomerProfile.update({
-      where: { id: groomerId },
+      where: { id: existingGroomer.id },
       data: {
         approvalStatus: 'REJECTED',
         rejectionReason: reason,
@@ -322,5 +324,16 @@ export class AdminService {
     });
     const { password, ...adminWithoutPassword } = admin;
     return adminWithoutPassword;
+  }
+
+  private async findGroomerByProfileOrUserId(id: string) {
+    const groomer = await this.prisma.groomerProfile.findFirst({
+      where: {
+        OR: [{ id }, { userId: id }],
+      },
+      select: { id: true },
+    });
+    if (!groomer) throw new NotFoundException('Groomer not found');
+    return groomer;
   }
 }
