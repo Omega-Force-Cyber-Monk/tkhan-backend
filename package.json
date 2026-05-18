@@ -6,6 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "prebuild": "npm run prisma:generate",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -24,7 +25,7 @@
     "seed": "npm run build && node dist/prisma/seed.js",
     "seed:prod": "node dist/prisma/seed.js",
     "db:setup": "npm run prisma:generate && npm run prisma:migrate && npm run seed",
-    "render:build": "npm run prisma:generate && npm run prisma:deploy && npm run build && npm run seed:prod"
+    "render:build": "npm run prisma:deploy && npm run build && npm run seed:prod"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
