@@ -181,7 +181,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       return existingPayment;
     }
     if (
-      existingPayment.status === 'SUCCEEDED' &&
+      existingPayment.paidAt &&
       existingPayment.booking.status !== 'PAYMENT_PENDING'
     ) {
       return existingPayment;
@@ -190,7 +190,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const payment = await this.prisma.payment.update({
       where: { id: paymentId },
       data: {
-        status: 'SUCCEEDED',
+        status: 'PENDING',
         stripePaymentIntentId: paymentIntentId,
         paidAt: new Date(),
       },
@@ -219,9 +219,38 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     );
     return payment;
   }
+
+  async markPaymentAccepted(bookingId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        bookingId,
+        status: 'PENDING',
+        paidAt: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) {
+      throw new BadRequestException(
+        'Booking payment has not been completed by the buyer yet',
+      );
+    }
+    if (payment.status === 'SUCCEEDED') {
+      return payment;
+    }
+    return this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'SUCCEEDED' },
+    });
+  }
+
   async refundBooking(bookingId: string, reason?: string) {
     const payment = await this.prisma.payment.findFirst({
-      where: { bookingId, status: 'SUCCEEDED' },
+      where: {
+        bookingId,
+        status: { in: ['PENDING', 'SUCCEEDED'] },
+        paidAt: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
     });
     if (!payment) throw new BadRequestException('No successful payment found');
     const refund = payment.stripePaymentIntentId
@@ -269,7 +298,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: {
         status: 'PENDING',
         requestedAt: { lte: cutoff },
-        payments: { some: { status: 'SUCCEEDED' } },
+        payments: {
+          some: {
+            status: { in: ['PENDING', 'SUCCEEDED'] },
+            paidAt: { not: null },
+          },
+        },
       },
       select: { id: true },
       take: 50,
