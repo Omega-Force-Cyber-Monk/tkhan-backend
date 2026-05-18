@@ -156,6 +156,11 @@ export class BookingsService {
   }
 
   async listForUser(userId: string, role: string, dto: BookingQueryDto) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
     const where: any = {
       ...(role === 'BUYER'
         ? { buyerId: userId }
@@ -163,6 +168,16 @@ export class BookingsService {
           ? { groomerId: userId }
           : {}),
       ...(dto.status && { status: dto.status }),
+      ...(dto.today && {
+        availabilitySlot: {
+          availability: {
+            date: {
+              gte: todayStart,
+              lt: tomorrowStart,
+            },
+          },
+        },
+      }),
     };
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
