@@ -474,7 +474,7 @@ model ChatConversation {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  @@unique([buyerId, groomerId, bookingId])
+  @@unique([buyerId, groomerId])
   @@index([buyerId])
   @@index([groomerId])
 }

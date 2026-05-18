@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { UploadsService } from '../uploads/uploads.service';
+import { ChatGateway } from './chat.gateway';
 import { ChatService } from './chat.service';
 import { SendMessageDto, StartConversationDto } from './dto/chat.dto';
 @ApiTags('chat')
@@ -21,13 +22,17 @@ import { SendMessageDto, StartConversationDto } from './dto/chat.dto';
 export class ChatController {
   constructor(
     private readonly chatService: ChatService,
+    private readonly chatGateway: ChatGateway,
     private readonly uploads: UploadsService,
   ) {}
   @Post('conversations') start(
     @CurrentUser() user: AuthUser,
     @Body() dto: StartConversationDto,
   ) {
-    return this.chatService.start(user.sub, dto);
+    return this.chatService.start(user.sub, dto).then((conversation) => {
+      this.chatGateway.emitConversationCreated(conversation);
+      return conversation;
+    });
   }
   @Get('conversations') conversations(@CurrentUser() user: AuthUser) {
     return this.chatService.conversations(user.sub);
@@ -62,12 +67,17 @@ export class ChatController {
       file,
       'tkhan/chat-attachments',
     );
-    return this.chatService.send(user.sub, dto);
+    const payload = await this.chatService.sendWithConversation(user.sub, dto);
+    this.chatGateway.emitMessageCreated(payload.conversation, payload.message);
+    return payload.message;
   }
   @Patch('conversations/:id/read') markRead(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
   ) {
-    return this.chatService.markRead(user.sub, id);
+    return this.chatService.markRead(user.sub, id).then((receipt) => {
+      this.chatGateway.emitMessagesRead(receipt);
+      return receipt;
+    });
   }
 }
