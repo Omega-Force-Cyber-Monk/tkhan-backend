@@ -24,9 +24,11 @@ import {
 @Controller('availability')
 export class AvailabilityController {
   constructor(private readonly availabilityService: AvailabilityService) {}
+
   @Public() @Get() list(@Query() dto: AvailabilityQueryDto) {
     return this.availabilityService.list(dto);
   }
+
   @ApiBearerAuth() @Roles('GROOMER') @Post() upsert(
     @CurrentUser() user: AuthUser,
     @Body() dto: UpsertAvailabilityDto,

@@ -134,4 +134,7 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
 }
 
-void bootstrap();
+void bootstrap().catch((error) => {
+  console.error('Bootstrap failed', error);
+  process.exit(1);
+});
