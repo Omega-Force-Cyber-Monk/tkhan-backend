@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
@@ -27,7 +28,7 @@ export class BuyerService {
     ]);
     return { categories, groomers, userId };
   }
-  async searchGroomers(dto: GroomerSearchDto) {
+  async searchGroomers(dto: GroomerSearchDto, buyerId?: string) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const search = dto.search?.trim();
@@ -100,7 +101,6 @@ export class BuyerService {
     }
     const where: any = {
       approvalStatus: 'APPROVED',
-      availableForBookings: true,
       user: {
         isBlocked: false,
         status: 'ACTIVE',
@@ -118,7 +118,10 @@ export class BuyerService {
       items = await this.prisma.groomerProfile.findMany({
         where,
         ...paginate(page, limit),
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: [
+          { availableForBookings: 'desc' },
+          { [sortBy]: sortOrder },
+        ],
         include: {
           user: true,
           services: { where: { active: true }, include: { category: true } },
@@ -140,21 +143,37 @@ export class BuyerService {
     }
 
     const ratingByUserId = new Map<string, number>();
+    const favoriteByGroomerId = new Set<string>();
     try {
-      const ratings = await this.prisma.review.groupBy({
-        by: ['revieweeId'],
-        where: {
-          revieweeId: { in: items.map((g) => g.userId) },
-          targetType: 'GROOMER',
-        },
-        _avg: { rating: true },
-      });
+      const favoritesPromise: Promise<Array<{ groomerId: string }>> = buyerId
+        ? this.prisma.buyerFavoriteGroomer.findMany({
+            where: {
+              buyerId,
+              groomerId: { in: items.map((g) => g.id) },
+            },
+            select: { groomerId: true },
+          })
+        : Promise.resolve([]);
+      const [ratings, favorites] = await Promise.all([
+        this.prisma.review.groupBy({
+          by: ['revieweeId'],
+          where: {
+            revieweeId: { in: items.map((g) => g.userId) },
+            targetType: 'GROOMER',
+          },
+          _avg: { rating: true },
+        }),
+        favoritesPromise,
+      ]);
       ratings.forEach((rating) => {
         ratingByUserId.set(rating.revieweeId, rating._avg.rating ?? 0);
       });
+      favorites.forEach((favorite) => {
+        favoriteByGroomerId.add(favorite.groomerId);
+      });
     } catch (error) {
       this.logger.warn(
-        `Could not load groomer ratings for buyer search. Falling back to zero ratings. ${
+        `Could not load groomer ratings/favorites for buyer search. Falling back to defaults. ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -164,6 +183,7 @@ export class BuyerService {
       const prices = g.services.map((s) => Number(s.price));
       return {
         ...g,
+        isFavorite: favoriteByGroomerId.has(g.id),
         averageRating: ratingByUserId.get(g.userId) ?? 0,
         priceRange: prices.length
           ? { min: Math.min(...prices), max: Math.max(...prices) }
@@ -181,12 +201,11 @@ export class BuyerService {
       limit,
     );
   }
-  groomerProfile(id: string) {
-    return this.prisma.groomerProfile.findFirstOrThrow({
+  async groomerProfile(id: string, buyerId?: string) {
+    const groomer = await this.prisma.groomerProfile.findFirst({
       where: {
-        id,
+        OR: [{ id }, { userId: id }],
         approvalStatus: 'APPROVED',
-        availableForBookings: true,
         user: { isBlocked: false, status: 'ACTIVE' },
       },
       include: {
@@ -209,6 +228,26 @@ export class BuyerService {
         },
       },
     });
+    if (!groomer) {
+      throw new NotFoundException('Groomer not found');
+    }
+    const isFavorite = buyerId
+      ? Boolean(
+          await this.prisma.buyerFavoriteGroomer.findUnique({
+            where: {
+              buyerId_groomerId: {
+                buyerId,
+                groomerId: groomer.id,
+              },
+            },
+            select: { id: true },
+          }),
+        )
+      : false;
+    return {
+      ...groomer,
+      isFavorite,
+    };
   }
 
   private handleDatabaseError(error: unknown): never {

@@ -19,6 +19,16 @@ export class GroomerService {
       include: { user: true },
     });
   }
+  async toggleBookingAvailability(userId: string, availableForBookings: boolean) {
+    if (availableForBookings) {
+      await this.assertCanEnableBookings(userId);
+    }
+    return this.prisma.groomerProfile.update({
+      where: { userId },
+      data: { availableForBookings },
+      include: { user: true },
+    });
+  }
   async dashboard(userId: string) {
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },
