@@ -42,11 +42,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     if (this.pendingRefundTimer) clearInterval(this.pendingRefundTimer);
   }
 
-  async createCheckoutSession(
-    bookingId: string,
-    buyerId: string,
-    apiBaseUrl?: string,
-  ) {
+  async createPaymentIntent(bookingId: string, buyerId: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id: bookingId },
     });
@@ -65,80 +61,42 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           currency: this.config.get('STRIPE_CURRENCY') ?? 'usd',
         },
       }));
-    const session = await this.stripe.checkout.sessions.create({
-      mode: 'payment',
-      success_url:
-        (apiBaseUrl ?? this.config.get('APP_URL') ?? 'http://localhost:3000') +
-        '/api/v1/payments/checkout/success?session_id={CHECKOUT_SESSION_ID}',
-      cancel_url:
-        (this.config.get('FRONTEND_URL') ?? 'http://localhost:5173') +
-        '/bookings/' +
-        bookingId +
-        '/payment',
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: payment.currency,
-            unit_amount: Math.round(Number(booking.totalAmount) * 100),
-            product_data: { name: 'Booking ' + booking.bookingNumber },
-          },
-        },
-      ],
-      metadata: { bookingId, paymentId: payment.id },
+
+    let intent: any;
+    if (payment.stripePaymentIntentId) {
+      const existingIntent = await this.stripe.paymentIntents.retrieve(
+        payment.stripePaymentIntentId,
+      );
+      if (existingIntent.status !== 'canceled') {
+        return {
+          paymentId: payment.id,
+          paymentIntentId: existingIntent.id,
+          clientSecret: existingIntent.client_secret,
+          amount: payment.amount,
+          currency: payment.currency,
+        };
+      }
+    }
+
+    intent = await this.stripe.paymentIntents.create({
+      amount: Math.round(Number(booking.totalAmount) * 100),
+      currency: payment.currency,
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        bookingId,
+        paymentId: payment.id,
+      },
     });
     await this.prisma.payment.update({
       where: { id: payment.id },
-      data: { stripeCheckoutSessionId: session.id },
+      data: { stripePaymentIntentId: intent.id },
     });
-    return { checkoutUrl: session.url, sessionId: session.id };
-  }
-
-  async confirmBookingCheckout(bookingId: string, buyerId: string) {
-    const booking = await this.prisma.booking.findUniqueOrThrow({
-      where: { id: bookingId },
-      include: {
-        payments: {
-          where: { stripeCheckoutSessionId: { not: null } },
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
-    });
-    if (booking.buyerId !== buyerId)
-      throw new BadRequestException('Booking belongs to another buyer');
-    const payment = booking.payments[0];
-    if (!payment?.stripeCheckoutSessionId)
-      throw new BadRequestException('No checkout session found for booking');
-
-    return this.confirmCheckoutSession(payment.stripeCheckoutSessionId);
-  }
-
-  async confirmCheckoutSession(sessionId: string) {
-    if (!sessionId)
-      throw new BadRequestException('Missing checkout session id');
-
-    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
-    if (session.payment_status !== 'paid')
-      throw new BadRequestException('Checkout session is not paid');
-
-    const paymentId = session.metadata?.paymentId;
-    const bookingId = session.metadata?.bookingId;
-    if (!paymentId || !bookingId)
-      throw new BadRequestException('Checkout session metadata is missing');
-
-    await this.markPaymentSucceeded(
-      String(paymentId),
-      this.paymentIntentId(session.payment_intent),
-    );
-
     return {
-      bookingId,
-      redirectUrl:
-        (this.config.get('FRONTEND_URL') ?? 'http://localhost:5173') +
-        '/bookings/' +
-        bookingId +
-        '/success',
+      paymentId: payment.id,
+      paymentIntentId: intent.id,
+      clientSecret: intent.client_secret,
+      amount: payment.amount,
+      currency: payment.currency,
     };
   }
 
@@ -153,11 +111,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       throw new BadRequestException('Invalid Stripe signature');
     }
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
+    if (event.type === 'payment_intent.succeeded') {
+      const intent = event.data.object;
       await this.markPaymentSucceeded(
-        String(session.metadata?.paymentId),
-        this.paymentIntentId(session.payment_intent),
+        String(intent.metadata?.paymentId),
+        String(intent.id),
       );
     }
     if (event.type === 'payment_intent.payment_failed') {
@@ -218,18 +176,6 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       { bookingId: booking.id },
     );
     return payment;
-  }
-
-  private paymentIntentId(paymentIntent: unknown) {
-    if (typeof paymentIntent === 'string') return paymentIntent;
-    if (
-      paymentIntent &&
-      typeof paymentIntent === 'object' &&
-      'id' in paymentIntent
-    ) {
-      return String((paymentIntent as { id: unknown }).id);
-    }
-    throw new BadRequestException('Checkout session payment intent is missing');
   }
   async refundBooking(bookingId: string, reason?: string) {
     const payment = await this.prisma.payment.findFirst({

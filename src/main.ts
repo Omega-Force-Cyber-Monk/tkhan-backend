@@ -10,8 +10,14 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5174',
+  ];
+
   app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: true, credentials: true });
+  app.enableCors({ origin: allowedOrigins, credentials: true });
   app.use(helmet());
   app.use(compression());
   app.use(cookieParser());
