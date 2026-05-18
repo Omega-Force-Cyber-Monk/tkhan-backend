@@ -1,7 +1,10 @@
 import {
   BadRequestException,
+  BadGatewayException,
   Injectable,
+  InternalServerErrorException,
   Logger,
+  NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
@@ -43,13 +46,20 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async createPaymentIntent(bookingId: string, buyerId: string) {
-    const booking = await this.prisma.booking.findUniqueOrThrow({
+    const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
     });
+    if (!booking) throw new NotFoundException('Booking not found');
     if (booking.buyerId !== buyerId)
       throw new BadRequestException('Booking belongs to another buyer');
     if (booking.status !== 'PAYMENT_PENDING')
       throw new BadRequestException('Booking is not awaiting payment');
+    const amountInCents = Math.round(Number(booking.totalAmount) * 100);
+    if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
+      throw new InternalServerErrorException(
+        'Booking total amount is invalid for payment processing',
+      );
+    }
     const payment =
       (await this.prisma.payment.findFirst({
         where: { bookingId, status: 'PENDING' },
@@ -64,29 +74,58 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
     let intent: any;
     if (payment.stripePaymentIntentId) {
-      const existingIntent = await this.stripe.paymentIntents.retrieve(
-        payment.stripePaymentIntentId,
-      );
-      if (existingIntent.status !== 'canceled') {
-        return {
-          paymentId: payment.id,
-          paymentIntentId: existingIntent.id,
-          clientSecret: existingIntent.client_secret,
-          amount: payment.amount,
-          currency: payment.currency,
-        };
+      try {
+        const existingIntent = await this.stripe.paymentIntents.retrieve(
+          payment.stripePaymentIntentId,
+        );
+        if (
+          existingIntent.status !== 'canceled' &&
+          existingIntent.client_secret
+        ) {
+          return {
+            paymentId: payment.id,
+            paymentIntentId: existingIntent.id,
+            clientSecret: existingIntent.client_secret,
+            amount: payment.amount,
+            currency: payment.currency,
+          };
+        }
+      } catch (error) {
+        if (this.isStripeMissingResourceError(error)) {
+          this.logger.warn(
+            `Stored Stripe PaymentIntent ${payment.stripePaymentIntentId} for booking ${bookingId} no longer exists. Creating a fresh intent.`,
+          );
+          await this.prisma.payment.update({
+            where: { id: payment.id },
+            data: { stripePaymentIntentId: null },
+          });
+        } else {
+          throw this.wrapStripeError(
+            'retrieve existing payment intent',
+            error,
+          );
+        }
       }
     }
 
-    intent = await this.stripe.paymentIntents.create({
-      amount: Math.round(Number(booking.totalAmount) * 100),
-      currency: payment.currency,
-      automatic_payment_methods: { enabled: true },
-      metadata: {
-        bookingId,
-        paymentId: payment.id,
-      },
-    });
+    try {
+      intent = await this.stripe.paymentIntents.create({
+        amount: amountInCents,
+        currency: payment.currency,
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          bookingId,
+          paymentId: payment.id,
+        },
+      });
+    } catch (error) {
+      throw this.wrapStripeError('create payment intent', error);
+    }
+    if (!intent.client_secret) {
+      throw new InternalServerErrorException(
+        'Stripe did not return a client secret for the payment intent',
+      );
+    }
     await this.prisma.payment.update({
       where: { id: payment.id },
       data: { stripePaymentIntentId: intent.id },
@@ -131,10 +170,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return { received: true };
   }
   async markPaymentSucceeded(paymentId: string, paymentIntentId: string) {
-    const existingPayment = await this.prisma.payment.findUniqueOrThrow({
+    const existingPayment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { booking: true },
     });
+    if (!existingPayment) {
+      throw new NotFoundException('Payment record not found');
+    }
     if (existingPayment.status === 'REFUNDED') {
       return existingPayment;
     }
@@ -249,5 +291,24 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
 
     return { processed: expired.length };
+  }
+
+  private isStripeMissingResourceError(error: unknown) {
+    const stripeError = error as { code?: string };
+    return stripeError.code === 'resource_missing';
+  }
+
+  private wrapStripeError(action: string, error: unknown) {
+    const stripeError = error as { message?: string; code?: string };
+    const message = stripeError.message ?? 'Unknown Stripe error';
+    this.logger.error(
+      `Stripe failed to ${action}: ${message}${
+        stripeError.code ? ` code=${stripeError.code}` : ''
+      }`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    return new BadGatewayException(
+      `Stripe failed to ${action}: ${message}`,
+    );
   }
 }
