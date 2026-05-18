@@ -181,7 +181,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       return existingPayment;
     }
     if (
-      existingPayment.paidAt &&
+      existingPayment.status === 'SUCCEEDED' &&
       existingPayment.booking.status !== 'PAYMENT_PENDING'
     ) {
       return existingPayment;
@@ -190,7 +190,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const payment = await this.prisma.payment.update({
       where: { id: paymentId },
       data: {
-        status: 'PENDING',
+        status: 'SUCCEEDED',
         stripePaymentIntentId: paymentIntentId,
         paidAt: new Date(),
       },
@@ -220,34 +220,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return payment;
   }
 
-  async markPaymentAccepted(bookingId: string) {
-    const payment = await this.prisma.payment.findFirst({
-      where: {
-        bookingId,
-        status: 'PENDING',
-        paidAt: { not: null },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!payment) {
-      throw new BadRequestException(
-        'Booking payment has not been completed by the buyer yet',
-      );
-    }
-    if (payment.status === 'SUCCEEDED') {
-      return payment;
-    }
-    return this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: 'SUCCEEDED' },
-    });
-  }
-
   async refundBooking(bookingId: string, reason?: string) {
     const payment = await this.prisma.payment.findFirst({
       where: {
         bookingId,
-        status: { in: ['PENDING', 'SUCCEEDED'] },
+        status: 'SUCCEEDED',
         paidAt: { not: null },
       },
       orderBy: { createdAt: 'desc' },
@@ -300,7 +277,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         requestedAt: { lte: cutoff },
         payments: {
           some: {
-            status: { in: ['PENDING', 'SUCCEEDED'] },
+            status: 'SUCCEEDED',
             paidAt: { not: null },
           },
         },

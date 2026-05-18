@@ -244,7 +244,18 @@ export class BookingsService {
       throw new ForbiddenException('Booking belongs to another groomer');
     if (!['PENDING', 'REQUESTED'].includes(booking.status))
       throw new BadRequestException('Only pending bookings can be accepted');
-    await this.payments.markPaymentAccepted(id);
+    const paidPayment = await this.prisma.payment.findFirst({
+      where: {
+        bookingId: id,
+        status: 'SUCCEEDED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!paidPayment) {
+      throw new BadRequestException(
+        'Buyer payment has not been completed yet',
+      );
+    }
     const updated = await this.prisma.booking.update({
       where: { id },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
