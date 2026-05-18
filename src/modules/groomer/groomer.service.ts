@@ -21,7 +21,9 @@ export class GroomerService {
   }
   async toggleBookingAvailability(userId: string, availableForBookings: boolean) {
     if (availableForBookings) {
-      await this.assertCanEnableBookings(userId);
+      await this.assertCanEnableBookings(userId, {
+        requirePaymentMethod: false,
+      });
     }
     return this.prisma.groomerProfile.update({
       where: { userId },
@@ -98,14 +100,18 @@ export class GroomerService {
     };
   }
 
-  private async assertCanEnableBookings(userId: string) {
+  private async assertCanEnableBookings(
+    userId: string,
+    options?: { requirePaymentMethod?: boolean },
+  ) {
+    const requirePaymentMethod = options?.requirePaymentMethod ?? true;
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },
       include: {
         _count: {
           select: {
             services: { where: { active: true } },
-            paymentMethods: true,
+            ...(requirePaymentMethod && { paymentMethods: true }),
           },
         },
       },
@@ -118,7 +124,7 @@ export class GroomerService {
         'Add at least one active service before enabling availability',
       );
     }
-    if (groomer._count.paymentMethods === 0) {
+    if (requirePaymentMethod && groomer._count.paymentMethods === 0) {
       throw new BadRequestException(
         'Add a payment method before enabling availability',
       );
