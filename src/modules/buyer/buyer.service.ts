@@ -28,6 +28,16 @@ export class BuyerService {
     ]);
     return { categories, groomers, userId };
   }
+  platformPricing() {
+    return this.prisma.platformSetting.upsert({
+      where: { id: 'platform' },
+      create: {
+        id: 'platform',
+        serviceChargeAmount: 0,
+      },
+      update: {},
+    });
+  }
   async searchGroomers(dto: GroomerSearchDto, buyerId?: string) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
