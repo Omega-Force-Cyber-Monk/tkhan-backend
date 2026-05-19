@@ -52,8 +52,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.buyerId !== buyerId)
       throw new BadRequestException('Booking belongs to another buyer');
-    if (booking.status !== 'PAYMENT_PENDING')
-      throw new BadRequestException('Booking is not awaiting payment');
+    if (!['PENDING', 'PAYMENT_PENDING'].includes(booking.status))
+      throw new BadRequestException('Booking is not in a payable state');
     const amountInCents = Math.round(Number(booking.totalAmount) * 100);
     if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
       throw new InternalServerErrorException(
@@ -62,13 +62,20 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
     const payment =
       (await this.prisma.payment.findFirst({
-        where: { bookingId, status: 'PENDING' },
+        where: {
+          bookingId,
+          status: {
+            in: ['PAYMENT_PENDING', 'PENDING', 'FAILED', 'REQUIRES_ACTION'],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
       })) ??
       (await this.prisma.payment.create({
         data: {
           bookingId,
           amount: booking.totalAmount,
           currency: this.config.get('STRIPE_CURRENCY') ?? 'usd',
+          status: 'PAYMENT_PENDING',
         },
       }));
 
@@ -180,10 +187,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     if (existingPayment.status === 'REFUNDED') {
       return existingPayment;
     }
-    if (
-      existingPayment.status === 'SUCCEEDED' &&
-      existingPayment.booking.status !== 'PAYMENT_PENDING'
-    ) {
+    if (existingPayment.status === 'SUCCEEDED') {
       return existingPayment;
     }
 
@@ -196,12 +200,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       },
       include: { booking: true },
     });
-    if (payment.booking.status !== 'PAYMENT_PENDING') {
-      return payment;
-    }
     const booking = await this.prisma.booking.update({
       where: { id: payment.bookingId },
-      data: { status: 'PENDING', requestedAt: new Date() },
+      data: {
+        status: 'PENDING',
+        requestedAt: payment.booking.requestedAt ?? new Date(),
+      },
     });
     await this.notifications.create(
       booking.buyerId,
@@ -220,7 +224,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return payment;
   }
 
-  async refundBooking(bookingId: string, reason?: string) {
+  async refundBooking(
+    bookingId: string,
+    reason?: string,
+    bookingStatus: 'REJECTED' | 'REFUNDED' = 'REFUNDED',
+  ) {
     const payment = await this.prisma.payment.findFirst({
       where: {
         bookingId,
@@ -248,7 +256,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       });
       const updated = await tx.booking.update({
         where: { id: bookingId },
-        data: { status: 'REFUNDED', refundedAt: new Date() },
+        data: {
+          status: bookingStatus,
+          ...(bookingStatus === 'REFUNDED' && { refundedAt: new Date() }),
+        },
       });
       if (updated.availabilitySlotId) {
         await tx.groomerAvailabilitySlot.update({

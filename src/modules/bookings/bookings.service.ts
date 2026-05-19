@@ -121,6 +121,7 @@ export class BookingsService {
           city: dto.city,
           postalCode: dto.postalCode,
           note: dto.note,
+          status: 'PENDING',
           subtotalAmount: subtotal,
           platformFeeAmount: platformFee,
           groomerEarningAmount: groomerEarning,
@@ -144,8 +145,14 @@ export class BookingsService {
               price: addon.price,
             })),
           },
+          payments: {
+            create: {
+              amount: subtotal,
+              status: 'PAYMENT_PENDING',
+            },
+          },
         },
-        include: { services: true, addons: true },
+        include: { services: true, addons: true, payments: true },
       });
       await tx.groomerAvailabilitySlot.update({
         where: { id: slot.id },
@@ -298,7 +305,7 @@ export class BookingsService {
       dto.reason,
       { bookingId: id },
     );
-    return this.payments.refundBooking(id, dto.reason);
+    return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
   async requestCompletion(
@@ -343,10 +350,19 @@ export class BookingsService {
       throw new BadRequestException(
         'Booking is not awaiting completion approval',
       );
-    const updated = await this.prisma.booking.update({
-      where: { id },
-      data: { status: 'COMPLETED', completedAt: new Date() },
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.booking.update({
+        where: { id },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      }),
+      this.prisma.payment.updateMany({
+        where: {
+          bookingId: id,
+          status: 'SUCCEEDED',
+        },
+        data: { status: 'COMPLETED' },
+      }),
+    ]);
     await this.notifications.create(
       updated.groomerId,
       'BOOKING_COMPLETED',

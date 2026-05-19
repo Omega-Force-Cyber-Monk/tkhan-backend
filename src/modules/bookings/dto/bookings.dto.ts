@@ -5,7 +5,6 @@ import { IsBoolean } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export const BOOKING_STATUSES = [
-  'PAYMENT_PENDING',
   'PENDING',
   'REQUESTED',
   'ACCEPTED',

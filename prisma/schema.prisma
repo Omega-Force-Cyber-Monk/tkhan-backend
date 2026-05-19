@@ -47,12 +47,14 @@ enum BookingStatus {
 }
 
 enum PaymentStatus {
+  PAYMENT_PENDING
   PENDING
   REQUIRES_ACTION
   SUCCEEDED
   FAILED
   REFUNDED
   PARTIALLY_REFUNDED
+  COMPLETED
 }
 
 enum PayoutStatus {
@@ -332,7 +334,7 @@ model Booking {
   city                   String?
   postalCode             String?
   note                   String?
-  status                 BookingStatus             @default(PAYMENT_PENDING)
+  status                 BookingStatus             @default(PENDING)
   subtotalAmount         Decimal                   @db.Decimal(10, 2)
   platformFeeAmount      Decimal                   @db.Decimal(10, 2)
   groomerEarningAmount   Decimal                   @db.Decimal(10, 2)
@@ -398,7 +400,7 @@ model Payment {
   booking               Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   amount                Decimal       @db.Decimal(10, 2)
   currency              String        @default("usd")
-  status                PaymentStatus @default(PENDING)
+  status                PaymentStatus @default(PAYMENT_PENDING)
   stripeCheckoutSessionId String?     @unique
   stripePaymentIntentId String?       @unique
   stripeRefundId        String?
