@@ -4,6 +4,27 @@ import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
 import { IsBoolean } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
+const parseTodayFilter = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (Array.isArray(value)) {
+    const normalized = value
+      .map((item) => {
+        if (item === true || item === 'true') return true;
+        if (item === false || item === 'false') return false;
+        return undefined;
+      })
+      .filter((item): item is boolean => typeof item === 'boolean');
+    if (normalized.length === 0) return undefined;
+    if (normalized.includes(true) && normalized.includes(false)) {
+      return undefined;
+    }
+    return normalized[normalized.length - 1];
+  }
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return undefined;
+};
+
 export const BOOKING_STATUSES = [
   'PENDING',
   'REQUESTED',
@@ -63,10 +84,11 @@ export class BookingQueryDto extends PaginationDto {
   @ApiPropertyOptional({
     type: Boolean,
     example: true,
-    description: 'When true, only bookings scheduled for today are returned.',
+    description:
+      'true = only today, false = not today, omit = all bookings. If both true and false are sent, all bookings are returned.',
   })
   @IsOptional()
-  @Transform(({ value }) => value === true || value === 'true')
+  @Transform(({ value }) => parseTodayFilter(value))
   @IsBoolean()
   today?: boolean;
 }

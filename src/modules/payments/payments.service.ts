@@ -176,6 +176,73 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
     return { received: true };
   }
+  async confirmBookingPayment(bookingId: string, buyerId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.buyerId !== buyerId) {
+      throw new BadRequestException('Booking belongs to another buyer');
+    }
+    return this.syncPaymentStatusForBooking(bookingId);
+  }
+
+  async syncPaymentStatusForBooking(bookingId: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { bookingId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) {
+      throw new NotFoundException('Payment record not found');
+    }
+    if (payment.status === 'SUCCEEDED' || payment.status === 'COMPLETED') {
+      return payment;
+    }
+    if (!payment.stripePaymentIntentId) {
+      throw new BadRequestException('Payment intent has not been created yet');
+    }
+
+    let intent: any;
+    try {
+      intent = await this.stripe.paymentIntents.retrieve(
+        payment.stripePaymentIntentId,
+      );
+    } catch (error) {
+      throw this.wrapStripeError('retrieve payment intent for confirmation', error);
+    }
+
+    if (intent.status === 'succeeded') {
+      return this.markPaymentSucceeded(payment.id, intent.id);
+    }
+    if (intent.status === 'canceled') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'FAILED',
+          failureReason: 'Payment intent was canceled in Stripe',
+        },
+      });
+      throw new BadRequestException('Payment was canceled');
+    }
+    if (intent.status === 'requires_payment_method') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'FAILED',
+          failureReason:
+            intent.last_payment_error?.message ?? 'Payment method is required',
+        },
+      });
+      throw new BadRequestException(
+        intent.last_payment_error?.message ?? 'Payment is incomplete',
+      );
+    }
+
+    throw new BadRequestException(
+      `Payment is not completed yet. Current Stripe status: ${intent.status}`,
+    );
+  }
+
   async markPaymentSucceeded(paymentId: string, paymentIntentId: string) {
     const existingPayment = await this.prisma.payment.findUnique({
       where: { id: paymentId },

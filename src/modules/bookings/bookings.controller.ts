@@ -45,6 +45,7 @@ const bookingExample = {
   postalCode: '78701',
   note: 'Please use hypoallergenic shampoo.',
   status: 'PENDING',
+  scheduledDate: '2026-05-11T00:00:00.000Z',
   subtotalAmount: '75.00',
   serviceChargeAmount: '3.00',
   platformFeeAmount: '7.50',
@@ -65,6 +66,17 @@ const bookingExample = {
   afterImage: null,
   createdAt: '2026-05-11T04:30:00.000Z',
   updatedAt: '2026-05-11T04:30:00.000Z',
+  availabilitySlot: {
+    id: 'slot-uuid',
+    startTime: '2026-05-11T10:00:00.000Z',
+    endTime: '2026-05-11T11:30:00.000Z',
+    isBooked: true,
+    availability: {
+      id: 'availability-uuid',
+      date: '2026-05-11T00:00:00.000Z',
+      isAvailable: true,
+    },
+  },
   services: [
     {
       id: 'booking-service-uuid',
@@ -163,7 +175,10 @@ const bookingDetailExample = {
     totalAmount: '78.00',
     payoutId: 'payout-uuid',
     payoutStatus: 'PENDING',
-    payoutReleasedAt: null,
+    payoutPaidOutAt: null,
+    payoutReservedAmount: '0.00',
+    payoutPaidAmount: '0.00',
+    payoutAvailableAmount: '67.50',
   },
 };
 
@@ -243,6 +258,12 @@ export class BookingsController {
     @Body() dto: BookingDecisionDto,
   ) {
     return this.bookingsService.reject(user.sub, id, dto);
+  }
+  @Roles('GROOMER') @Patch(':id/in-progress') markInProgress(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.bookingsService.markInProgress(user.sub, id);
   }
   @Roles('GROOMER') @Patch(':id/request-completion') requestCompletion(
     @CurrentUser() user: AuthUser,

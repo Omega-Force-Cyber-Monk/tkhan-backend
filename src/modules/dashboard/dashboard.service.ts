@@ -19,7 +19,6 @@ export class DashboardService {
       }),
       this.prisma.booking.count({ where: { createdAt: { gte: today } } }),
       this.prisma.payout.aggregate({
-        where: { status: 'PAID' },
         _sum: { platformFee: true },
       }),
       this.prisma.user.findMany({ take: 10, orderBy: { createdAt: 'desc' } }),
@@ -29,7 +28,7 @@ export class DashboardService {
       _count: { _all: true },
     });
     const revenueTrend = await this.prisma.payout.groupBy({
-      by: ['status'],
+      by: ['currency'],
       _sum: { platformFee: true },
     });
     return {

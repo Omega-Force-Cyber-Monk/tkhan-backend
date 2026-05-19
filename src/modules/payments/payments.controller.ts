@@ -24,6 +24,15 @@ export class PaymentsController {
   ) {
     return this.paymentsService.createPaymentIntent(bookingId, user.sub);
   }
+  @ApiBearerAuth()
+  @Roles('BUYER')
+  @Post('bookings/:bookingId/confirm')
+  confirmPayment(
+    @CurrentUser() user: AuthUser,
+    @Param('bookingId') bookingId: string,
+  ) {
+    return this.paymentsService.confirmBookingPayment(bookingId, user.sub);
+  }
   @Public() @Post('stripe/webhook') webhook(
     @Req() req: any,
     @Headers('stripe-signature') signature: string,
