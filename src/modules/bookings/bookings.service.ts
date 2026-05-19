@@ -121,6 +121,7 @@ export class BookingsService {
           city: dto.city,
           postalCode: dto.postalCode,
           note: dto.note,
+          status: 'PENDING',
           subtotalAmount: subtotal,
           platformFeeAmount: platformFee,
           groomerEarningAmount: groomerEarning,
@@ -144,8 +145,14 @@ export class BookingsService {
               price: addon.price,
             })),
           },
+          payments: {
+            create: {
+              amount: subtotal,
+              status: 'PAYMENT_PENDING',
+            },
+          },
         },
-        include: { services: true, addons: true },
+        include: { services: true, addons: true, payments: true },
       });
       await tx.groomerAvailabilitySlot.update({
         where: { id: slot.id },
@@ -156,6 +163,11 @@ export class BookingsService {
   }
 
   async listForUser(userId: string, role: string, dto: BookingQueryDto) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
     const where: any = {
       ...(role === 'BUYER'
         ? { buyerId: userId }
@@ -163,6 +175,16 @@ export class BookingsService {
           ? { groomerId: userId }
           : {}),
       ...(dto.status && { status: dto.status }),
+      ...(dto.today && {
+        availabilitySlot: {
+          availability: {
+            date: {
+              gte: todayStart,
+              lt: tomorrowStart,
+            },
+          },
+        },
+      }),
     };
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
@@ -229,6 +251,18 @@ export class BookingsService {
       throw new ForbiddenException('Booking belongs to another groomer');
     if (!['PENDING', 'REQUESTED'].includes(booking.status))
       throw new BadRequestException('Only pending bookings can be accepted');
+    const paidPayment = await this.prisma.payment.findFirst({
+      where: {
+        bookingId: id,
+        status: 'SUCCEEDED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!paidPayment) {
+      throw new BadRequestException(
+        'Buyer payment has not been completed yet',
+      );
+    }
     const updated = await this.prisma.booking.update({
       where: { id },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
@@ -271,7 +305,7 @@ export class BookingsService {
       dto.reason,
       { bookingId: id },
     );
-    return this.payments.refundBooking(id, dto.reason);
+    return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
   async requestCompletion(
@@ -316,10 +350,19 @@ export class BookingsService {
       throw new BadRequestException(
         'Booking is not awaiting completion approval',
       );
-    const updated = await this.prisma.booking.update({
-      where: { id },
-      data: { status: 'COMPLETED', completedAt: new Date() },
-    });
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.booking.update({
+        where: { id },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      }),
+      this.prisma.payment.updateMany({
+        where: {
+          bookingId: id,
+          status: 'SUCCEEDED',
+        },
+        data: { status: 'COMPLETED' },
+      }),
+    ]);
     await this.notifications.create(
       updated.groomerId,
       'BOOKING_COMPLETED',

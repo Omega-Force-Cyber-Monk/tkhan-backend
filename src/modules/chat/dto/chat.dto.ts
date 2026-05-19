@@ -1,8 +1,15 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ApiHideProperty,
+  ApiProperty,
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 export class StartConversationDto {
-  @ApiProperty() @IsString() groomerId: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() bookingId?: string;
+  @ApiProperty({
+    description: 'Target user id. Direct chat is created between buyer and groomer.',
+  })
+  @IsString()
+  userId: string;
 }
 export class SendMessageDto {
   @ApiProperty() @IsString() conversationId: string;
@@ -10,5 +17,8 @@ export class SendMessageDto {
   @IsEnum(['TEXT', 'IMAGE', 'FILE'])
   type: 'TEXT' | 'IMAGE' | 'FILE';
   @ApiPropertyOptional() @IsOptional() @IsString() body?: string;
+  @ApiHideProperty()
+  @IsOptional()
+  @IsString()
   attachmentUrl?: string;
 }

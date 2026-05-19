@@ -56,9 +56,16 @@ export class AvailabilityService {
     });
   }
   async list(dto: AvailabilityQueryDto) {
+    const groomer = dto.userId
+      ? await this.prisma.groomerProfile.findUniqueOrThrow({
+          where: { userId: dto.userId },
+          select: { id: true },
+        })
+      : null;
+
     return this.prisma.groomerAvailability.findMany({
       where: {
-        ...(dto.groomerId && { groomerId: dto.groomerId }),
+        ...(groomer && { groomerId: groomer.id }),
         ...(dto.panel === 'BUYER' && { isAvailable: true }),
         date: {
           ...(dto.from && { gte: this.parseDateOnly(dto.from) }),

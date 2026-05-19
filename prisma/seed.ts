@@ -194,6 +194,254 @@ async function seedDemoUser(user: DemoUserSeed) {
   console.log(`Seeded ${user.role.toLowerCase()}: ${normalizedEmail}`);
 }
 
+async function seedPendingGroomer() {
+  const password = await bcrypt.hash('Password@123', bcryptRounds);
+  const user = await prisma.user.upsert({
+    where: { email: 'pending.groomer@tkhan.local' },
+    update: {
+      fullName: 'Pending Groomer Demo',
+      phone: '+15550004001',
+      password,
+      locationText: 'Houston, TX',
+      state: 'TX',
+      role: 'GROOMER',
+      emailVerified: true,
+      status: 'ACTIVE',
+      isBlocked: false,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+      refreshTokenHash: null,
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
+    },
+    create: {
+      fullName: 'Pending Groomer Demo',
+      email: 'pending.groomer@tkhan.local',
+      phone: '+15550004001',
+      password,
+      locationText: 'Houston, TX',
+      state: 'TX',
+      role: 'GROOMER',
+      emailVerified: true,
+      status: 'ACTIVE',
+      isBlocked: false,
+    },
+  });
+
+  await prisma.groomerProfile.upsert({
+    where: { userId: user.id },
+    update: {
+      experienceYears: 2,
+      legalFullName: user.fullName,
+      idNumber: `PENDING-${user.id.slice(0, 8)}`,
+      idType: 'DRIVING_LICENSE',
+      businessName: 'Pending Paws Demo',
+      serviceArea: 'Houston, TX',
+      businessAddress: '400 Demo Lane, Houston, TX',
+      idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      shortBio: 'Demo groomer waiting for admin approval.',
+      availableForBookings: false,
+      approvalStatus: 'PENDING',
+      approvedAt: null,
+      approvedById: null,
+      rejectionReason: null,
+    },
+    create: {
+      userId: user.id,
+      experienceYears: 2,
+      legalFullName: user.fullName,
+      idNumber: `PENDING-${user.id.slice(0, 8)}`,
+      idType: 'DRIVING_LICENSE',
+      businessName: 'Pending Paws Demo',
+      serviceArea: 'Houston, TX',
+      businessAddress: '400 Demo Lane, Houston, TX',
+      idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+      shortBio: 'Demo groomer waiting for admin approval.',
+      availableForBookings: false,
+      approvalStatus: 'PENDING',
+    },
+  });
+
+  console.log('Seeded pending groomer: pending.groomer@tkhan.local');
+}
+
+async function seedDemoPayout() {
+  const category = await prisma.serviceCategory.upsert({
+    where: { name: 'Demo Payout Services' },
+    update: {
+      description: 'Seed services used for payout examples.',
+      active: true,
+    },
+    create: {
+      name: 'Demo Payout Services',
+      description: 'Seed services used for payout examples.',
+      active: true,
+    },
+  });
+  const buyer = await prisma.user.findUniqueOrThrow({
+    where: { email: 'buyer1@tkhan.local' },
+  });
+  const groomerUser = await prisma.user.findUniqueOrThrow({
+    where: { email: 'groomer1@tkhan.local' },
+    include: { groomerProfile: true },
+  });
+  if (!groomerUser.groomerProfile) {
+    throw new Error('Demo groomer profile is required before seeding payout.');
+  }
+
+  const pet =
+    (await prisma.pet.findFirst({
+      where: { buyerId: buyer.id, name: 'Payout Demo Pet' },
+    })) ??
+    (await prisma.pet.create({
+      data: {
+        buyerId: buyer.id,
+        name: 'Payout Demo Pet',
+        breed: 'Mixed Breed',
+        age: 4,
+        petType: 'DOG',
+        petSize: 'MEDIUM',
+        temperament: 'Friendly',
+      },
+    }));
+
+  const service =
+    (await prisma.service.findFirst({
+      where: {
+        groomerId: groomerUser.groomerProfile.id,
+        title: 'Completed Demo Groom',
+      },
+    })) ??
+    (await prisma.service.create({
+      data: {
+        groomerId: groomerUser.groomerProfile.id,
+        categoryId: category.id,
+        title: 'Completed Demo Groom',
+        description: 'Completed service used to demonstrate payout records.',
+        durationMinutes: 90,
+        price: 80,
+        active: true,
+      },
+    }));
+
+  const completedAt = new Date();
+  const booking = await prisma.booking.upsert({
+    where: { bookingNumber: 'BK-DEMO-PAYOUT-001' },
+    update: {
+      buyerId: buyer.id,
+      groomerId: groomerUser.id,
+      petId: pet.id,
+      serviceLocation: 'Customer home',
+      addressLine: '123 Demo Street',
+      state: 'TX',
+      city: 'Austin',
+      postalCode: '73301',
+      status: 'COMPLETED',
+      subtotalAmount: 80,
+      platformFeeAmount: 8,
+      groomerEarningAmount: 72,
+      totalAmount: 80,
+      requestedAt: completedAt,
+      acceptedAt: completedAt,
+      inProgressAt: completedAt,
+      completionRequestedAt: completedAt,
+      completedAt,
+    },
+    create: {
+      bookingNumber: 'BK-DEMO-PAYOUT-001',
+      buyerId: buyer.id,
+      groomerId: groomerUser.id,
+      petId: pet.id,
+      serviceLocation: 'Customer home',
+      addressLine: '123 Demo Street',
+      state: 'TX',
+      city: 'Austin',
+      postalCode: '73301',
+      status: 'COMPLETED',
+      subtotalAmount: 80,
+      platformFeeAmount: 8,
+      groomerEarningAmount: 72,
+      totalAmount: 80,
+      requestedAt: completedAt,
+      acceptedAt: completedAt,
+      inProgressAt: completedAt,
+      completionRequestedAt: completedAt,
+      completedAt,
+      services: {
+        create: {
+          serviceId: service.id,
+          serviceTitle: service.title,
+          serviceDescription: service.description,
+          durationMinutes: service.durationMinutes,
+          price: service.price,
+          categoryName: category.name,
+        },
+      },
+    },
+  });
+
+  const payment = await prisma.payment.findFirst({
+    where: { bookingId: booking.id },
+  });
+  if (payment) {
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        amount: 80,
+        currency: 'usd',
+        status: 'SUCCEEDED',
+        paidAt: completedAt,
+      },
+    });
+  } else {
+    await prisma.payment.create({
+      data: {
+        bookingId: booking.id,
+        amount: 80,
+        currency: 'usd',
+        status: 'SUCCEEDED',
+        paidAt: completedAt,
+      },
+    });
+  }
+
+  const payout = await prisma.payout.findFirst({
+    where: { bookingId: booking.id },
+  });
+  if (payout) {
+    await prisma.payout.update({
+      where: { id: payout.id },
+      data: {
+        groomerId: groomerUser.groomerProfile.id,
+        amount: 72,
+        platformFee: 8,
+        currency: 'usd',
+        status: 'PENDING',
+        releasedAt: null,
+        stripeTransferId: null,
+        failureReason: null,
+      },
+    });
+  } else {
+    await prisma.payout.create({
+      data: {
+        bookingId: booking.id,
+        groomerId: groomerUser.groomerProfile.id,
+        amount: 72,
+        platformFee: 8,
+        currency: 'usd',
+        status: 'PENDING',
+      },
+    });
+  }
+
+  console.log('Seeded payout demo booking: BK-DEMO-PAYOUT-001');
+}
+
 async function main() {
   for (const admin of configuredAdmins()) {
     await seedAdmin(admin);
@@ -262,6 +510,9 @@ async function main() {
     ] satisfies DemoUserSeed[]) {
       await seedDemoUser(user);
     }
+
+    await seedPendingGroomer();
+    await seedDemoPayout();
   } else {
     console.log('Skipped demo users. Set SEED_DEMO_USERS=true to seed them.');
   }

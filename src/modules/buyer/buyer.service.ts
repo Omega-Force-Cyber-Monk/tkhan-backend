@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
@@ -103,7 +104,6 @@ export class BuyerService {
     }
     const where: any = {
       approvalStatus: 'APPROVED',
-      availableForBookings: true,
       user: {
         isBlocked: false,
         status: 'ACTIVE',
@@ -121,7 +121,10 @@ export class BuyerService {
       items = await this.prisma.groomerProfile.findMany({
         where,
         ...paginate(page, limit),
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: [
+          { availableForBookings: 'desc' },
+          { [sortBy]: sortOrder },
+        ],
         include: {
           user: true,
           services: { where: { active: true }, include: { category: true } },
@@ -157,19 +160,19 @@ export class BuyerService {
       });
     } catch (error) {
       this.logger.warn(
-        `Could not load groomer ratings for buyer search. Falling back to zero ratings. ${
+        `Could not load groomer ratings for buyer search. Falling back to defaults. ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
 
-    const favoriteByGroomerId = await this.favoriteByGroomerId(
+    const favoritesByGroomerId = await this.favoriteByGroomerId(
       buyerId,
       items.map((g) => g.id),
     );
     const groomers = items.map((g) => {
       const prices = g.services.map((s) => Number(s.price));
-      const favorite = favoriteByGroomerId.get(g.id);
+      const favorite = favoritesByGroomerId.get(g.id);
       return {
         ...g,
         isFavorite: Boolean(favorite),
@@ -192,11 +195,10 @@ export class BuyerService {
     );
   }
   async groomerProfile(id: string, buyerId?: string) {
-    const groomer = await this.prisma.groomerProfile.findFirstOrThrow({
+    const groomer = await this.prisma.groomerProfile.findFirst({
       where: {
-        id,
+        OR: [{ id }, { userId: id }],
         approvalStatus: 'APPROVED',
-        availableForBookings: true,
         user: { isBlocked: false, status: 'ACTIVE' },
       },
       include: {
@@ -219,6 +221,10 @@ export class BuyerService {
         },
       },
     });
+    if (!groomer) {
+      throw new NotFoundException('Groomer not found');
+    }
+
     const favorite = buyerId
       ? await this.prisma.buyerFavoriteGroomer.findUnique({
           where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },

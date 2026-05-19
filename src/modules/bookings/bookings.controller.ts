@@ -44,7 +44,7 @@ const bookingExample = {
   city: 'Austin',
   postalCode: '78701',
   note: 'Please use hypoallergenic shampoo.',
-  status: 'PAYMENT_PENDING',
+  status: 'PENDING',
   subtotalAmount: '75.00',
   platformFeeAmount: '7.50',
   groomerEarningAmount: '67.50',
