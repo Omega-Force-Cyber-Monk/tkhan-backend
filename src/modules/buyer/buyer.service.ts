@@ -17,17 +17,20 @@ export class BuyerService {
         where: { active: true },
         orderBy: { name: 'asc' },
       }),
-      this.searchGroomers({
-        page: 1,
-        limit: 12,
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
-        state,
-      }),
+      this.searchGroomers(
+        {
+          page: 1,
+          limit: 12,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          state,
+        },
+        userId,
+      ),
     ]);
     return { categories, groomers, userId };
   }
-  async searchGroomers(dto: GroomerSearchDto) {
+  async searchGroomers(dto: GroomerSearchDto, buyerId?: string) {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
     const search = dto.search?.trim();
@@ -160,10 +163,17 @@ export class BuyerService {
       );
     }
 
+    const favoriteByGroomerId = await this.favoriteByGroomerId(
+      buyerId,
+      items.map((g) => g.id),
+    );
     const groomers = items.map((g) => {
       const prices = g.services.map((s) => Number(s.price));
+      const favorite = favoriteByGroomerId.get(g.id);
       return {
         ...g,
+        isFavorite: Boolean(favorite),
+        favoriteId: favorite?.id ?? null,
         averageRating: ratingByUserId.get(g.userId) ?? 0,
         priceRange: prices.length
           ? { min: Math.min(...prices), max: Math.max(...prices) }
@@ -181,8 +191,8 @@ export class BuyerService {
       limit,
     );
   }
-  groomerProfile(id: string) {
-    return this.prisma.groomerProfile.findFirstOrThrow({
+  async groomerProfile(id: string, buyerId?: string) {
+    const groomer = await this.prisma.groomerProfile.findFirstOrThrow({
       where: {
         id,
         approvalStatus: 'APPROVED',
@@ -209,6 +219,31 @@ export class BuyerService {
         },
       },
     });
+    const favorite = buyerId
+      ? await this.prisma.buyerFavoriteGroomer.findUnique({
+          where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
+        })
+      : null;
+
+    return {
+      ...groomer,
+      isFavorite: Boolean(favorite),
+      favoriteId: favorite?.id ?? null,
+    };
+  }
+
+  private async favoriteByGroomerId(
+    buyerId: string | undefined,
+    ids: string[],
+  ) {
+    if (!buyerId || ids.length === 0)
+      return new Map<string, { id: string; groomerId: string }>();
+
+    const favorites = await this.prisma.buyerFavoriteGroomer.findMany({
+      where: { buyerId, groomerId: { in: ids } },
+      select: { id: true, groomerId: true },
+    });
+    return new Map(favorites.map((favorite) => [favorite.groomerId, favorite]));
   }
 
   private handleDatabaseError(error: unknown): never {
