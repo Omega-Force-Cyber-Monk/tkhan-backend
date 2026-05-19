@@ -43,7 +43,7 @@ export class UpsertAvailabilityDto {
 }
 export class UpdateAvailabilitySlotDto extends AvailabilitySlotDto {}
 export class AvailabilityQueryDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() groomerId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() userId?: string;
   @ApiPropertyOptional({ example: '2026-04-20' })
   @IsOptional()
   @IsString()
@@ -51,6 +51,7 @@ export class AvailabilityQueryDto {
     message: 'from must be in YYYY-MM-DD format',
   })
   from?: string;
+
   @ApiPropertyOptional({ example: '2026-04-26' })
   @IsOptional()
   @IsString()
@@ -58,6 +59,7 @@ export class AvailabilityQueryDto {
     message: 'to must be in YYYY-MM-DD format',
   })
   to?: string;
+
   @ApiPropertyOptional({
     enum: ['BUYER', 'GROOMER'],
     description:

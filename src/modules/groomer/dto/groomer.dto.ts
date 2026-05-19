@@ -196,3 +196,14 @@ export class UpdateGroomerProfileDto {
   @IsBoolean()
   availableForBookings?: boolean;
 }
+
+export class ToggleBookingAvailabilityDto {
+  @ApiPropertyOptional({ example: true })
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  availableForBookings: boolean;
+}

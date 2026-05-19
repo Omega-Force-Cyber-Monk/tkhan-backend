@@ -13,7 +13,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { UploadsService } from '../uploads/uploads.service';
 import { GroomerService } from './groomer.service';
-import { UpdateGroomerProfileDto } from './dto/groomer.dto';
+import {
+  ToggleBookingAvailabilityDto,
+  UpdateGroomerProfileDto,
+} from './dto/groomer.dto';
 @ApiTags('groomer')
 @ApiBearerAuth()
 @Roles('GROOMER')
@@ -76,6 +79,16 @@ export class GroomerController {
     if (profileImage) dto.profileImage = profileImage;
     if (selfieWithId) dto.selfieWithId = selfieWithId;
     return this.groomerService.updateProfile(user.sub, dto);
+  }
+  @Patch('booking-availability')
+  toggleBookingAvailability(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ToggleBookingAvailabilityDto,
+  ) {
+    return this.groomerService.toggleBookingAvailability(
+      user.sub,
+      dto.availableForBookings,
+    );
   }
   @Get('dashboard') dashboard(@CurrentUser() user: AuthUser) {
     return this.groomerService.dashboard(user.sub);

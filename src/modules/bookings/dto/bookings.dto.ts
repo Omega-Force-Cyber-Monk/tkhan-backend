@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsBoolean } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export const BOOKING_STATUSES = [
-  'PAYMENT_PENDING',
   'PENDING',
   'REQUESTED',
   'ACCEPTED',
@@ -58,6 +59,16 @@ export class BookingQueryDto extends PaginationDto {
   @IsOptional()
   @IsIn([...BOOKING_STATUSES])
   status?: (typeof BOOKING_STATUSES)[number];
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    example: true,
+    description: 'When true, only bookings scheduled for today are returned.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  today?: boolean;
 }
 export class BookingDecisionDto {
   @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;

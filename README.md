@@ -10,7 +10,7 @@ Production-oriented NestJS backend for a buyer/groomer service marketplace.
 - Bcrypt password hashing
 - Swagger/OpenAPI at `/docs`
 - Socket.IO gateways for chat and notifications
-- Stripe checkout, webhook, refund, and Connect payout structure
+- Stripe PaymentIntent, webhook, refund, and Connect payout structure
 
 ## Setup
 
@@ -43,6 +43,8 @@ Set these environment variables in Render:
 - `MIGRATE_DATABASE_URL` - Neon direct/non-pooler URL for Prisma migrations
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 
@@ -70,8 +72,8 @@ npm run start:prod
 3. Admin approves groomer.
 4. Groomer creates services, add-ons, and availability slots.
 5. Buyer creates a booking in `PAYMENT_PENDING`.
-6. Buyer creates Stripe checkout for the booking.
-7. Stripe webhook marks payment `SUCCEEDED` and booking `REQUESTED`.
+6. Buyer requests a Stripe PaymentIntent for the booking.
+7. Flutter confirms payment with Stripe SDK and Stripe webhook marks payment `SUCCEEDED` and booking `PENDING`.
 8. Groomer accepts or rejects. Reject issues full refund.
 9. Groomer sends completion request.
 10. Buyer approves completion, booking becomes `COMPLETED`, payout release is prepared.
@@ -86,11 +88,11 @@ npm run start:prod
 - `POST /api/v1/addons`
 - `POST /api/v1/availability`
 - `POST /api/v1/bookings`
-- `POST /api/v1/payments/bookings/:bookingId/checkout`
+- `POST /api/v1/payments/bookings/:bookingId/payment-intent`
 - `POST /api/v1/payments/stripe/webhook`
 
 ## Notes
 
 - Stripe Connect transfers are implemented when a groomer has a default payout-enabled payment method with `stripeAccountId`. Without that external onboarding, payouts remain `PENDING`.
 - Email sending is intentionally scaffolded: verification/reset token delivery should be wired to a mail provider before production launch.
-- All sensitive user fields are stripped by user-facing services.
+- All sensitive user fields are stripped by user-facing services ..
