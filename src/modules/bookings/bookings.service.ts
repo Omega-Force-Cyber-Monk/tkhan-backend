@@ -103,11 +103,16 @@ export class BookingsService {
         : [];
       if ((dto.addonIds?.length ?? 0) !== addons.length)
         throw new BadRequestException('One or more add-ons are invalid');
+      const pricing = await tx.platformSetting.findUnique({
+        where: { id: 'platform' },
+      });
       const subtotal =
         Number(service.price) +
         addons.reduce((sum, addon) => sum + Number(addon.price), 0);
+      const serviceCharge = Number(pricing?.serviceChargeAmount ?? 0);
       const platformFee = Number((subtotal * 0.1).toFixed(2));
       const groomerEarning = Number((subtotal - platformFee).toFixed(2));
+      const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
       const booking = await tx.booking.create({
         data: {
           bookingNumber: 'BK-' + Date.now(),
@@ -123,9 +128,10 @@ export class BookingsService {
           note: dto.note,
           status: 'PENDING',
           subtotalAmount: subtotal,
+          serviceChargeAmount: serviceCharge,
           platformFeeAmount: platformFee,
           groomerEarningAmount: groomerEarning,
-          totalAmount: subtotal,
+          totalAmount,
           services: {
             create: {
               serviceId: service.id,
@@ -147,7 +153,7 @@ export class BookingsService {
           },
           payments: {
             create: {
-              amount: subtotal,
+              amount: totalAmount,
               status: 'PAYMENT_PENDING',
             },
           },
@@ -233,6 +239,7 @@ export class BookingsService {
       ...booking,
       earnings: {
         subtotalAmount: booking.subtotalAmount,
+        serviceChargeAmount: booking.serviceChargeAmount,
         platformFeeAmount: booking.platformFeeAmount,
         groomerEarningAmount: booking.groomerEarningAmount,
         totalAmount: booking.totalAmount,
