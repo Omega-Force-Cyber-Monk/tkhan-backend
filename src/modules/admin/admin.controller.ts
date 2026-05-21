@@ -17,6 +17,7 @@ import {
   AdminUserFilterDto,
   CreateAdminDto,
   RejectGroomerDto,
+  UpdatePlatformPricingDto,
 } from './dto/admin.dto';
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -65,6 +66,19 @@ export class AdminController {
   }
   @Get('payments') payments() {
     return this.adminService.payments();
+  }
+  @Get('platform-pricing') platformPricing() {
+    return this.adminService.platformPricing();
+  }
+  @Patch('platform-pricing')
+  updatePlatformPricing(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdatePlatformPricingDto,
+  ) {
+    return this.adminService.updatePlatformPricing(
+      user.sub,
+      dto.serviceChargeAmount,
+    );
   }
   @Get('action-logs') actionLogs() {
     return this.adminService.actionLogs();

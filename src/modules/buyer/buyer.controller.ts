@@ -17,6 +17,11 @@ export class BuyerController {
     return this.buyerService.home(undefined, state);
   }
   @Public()
+  @Get('platform-pricing')
+  platformPricing() {
+    return this.buyerService.platformPricing();
+  }
+  @Public()
   @ApiBearerAuth()
   @Get('groomers')
   async search(

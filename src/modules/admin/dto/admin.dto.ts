@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
   IsEnum,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
+  Min,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
@@ -68,4 +70,16 @@ export class AdminUserFilterDto extends PaginationDto {
 export class AdminBlockUserDto {
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isBlocked?: boolean;
   @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
+}
+
+export class UpdatePlatformPricingDto {
+  @ApiProperty({
+    example: 3,
+    description:
+      'Flat service charge added to every booking total at payment time.',
+  })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  serviceChargeAmount!: number;
 }

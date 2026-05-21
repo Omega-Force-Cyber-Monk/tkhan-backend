@@ -1,9 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { PayoutsService } from '../payouts/payouts.service';
 import { UpdateGroomerProfileDto } from './dto/groomer.dto';
 @Injectable()
 export class GroomerService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly payouts: PayoutsService,
+  ) {}
   async updateProfile(userId: string, dto: UpdateGroomerProfileDto) {
     const { fullName, phone, profileImage, ...profile } = dto;
     if (profile.availableForBookings === true) {
@@ -21,9 +25,7 @@ export class GroomerService {
   }
   async toggleBookingAvailability(userId: string, availableForBookings: boolean) {
     if (availableForBookings) {
-      await this.assertCanEnableBookings(userId, {
-        requirePaymentMethod: false,
-      });
+      await this.assertCanEnableBookings(userId);
     }
     return this.prisma.groomerProfile.update({
       where: { userId },
@@ -58,60 +60,16 @@ export class GroomerService {
     };
   }
   async earnings(userId: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const now = new Date();
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const [recentTransactions, week, month, payoutHistory] = await Promise.all([
-      this.prisma.payout.findMany({
-        where: { groomerId: groomer.id },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-      this.prisma.payout.aggregate({
-        where: {
-          groomerId: groomer.id,
-          status: 'PAID',
-          createdAt: { gte: weekStart },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.payout.aggregate({
-        where: {
-          groomerId: groomer.id,
-          status: 'PAID',
-          createdAt: { gte: monthStart },
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.payout.findMany({
-        where: { groomerId: groomer.id },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
-    return {
-      recentTransactions,
-      thisWeekIncome: week._sum.amount ?? 0,
-      thisMonthIncome: month._sum.amount ?? 0,
-      payoutHistory,
-    };
+    return this.payouts.summary(userId);
   }
 
-  private async assertCanEnableBookings(
-    userId: string,
-    options?: { requirePaymentMethod?: boolean },
-  ) {
-    const requirePaymentMethod = options?.requirePaymentMethod ?? true;
+  private async assertCanEnableBookings(userId: string) {
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },
       include: {
         _count: {
           select: {
             services: { where: { active: true } },
-            ...(requirePaymentMethod && { paymentMethods: true }),
           },
         },
       },
@@ -122,11 +80,6 @@ export class GroomerService {
     if (groomer._count.services === 0) {
       throw new BadRequestException(
         'Add at least one active service before enabling availability',
-      );
-    }
-    if (requirePaymentMethod && groomer._count.paymentMethods === 0) {
-      throw new BadRequestException(
-        'Add a payment method before enabling availability',
       );
     }
     const futureSlotCount = await this.prisma.groomerAvailabilitySlot.count({

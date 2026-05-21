@@ -288,6 +288,36 @@ export class AdminService {
       include: { booking: true },
     });
   }
+  async platformPricing() {
+    return this.prisma.platformSetting.upsert({
+      where: { id: 'platform' },
+      create: {
+        id: 'platform',
+        serviceChargeAmount: 0,
+      },
+      update: {},
+    });
+  }
+  async updatePlatformPricing(adminId: string, serviceChargeAmount: number) {
+    const pricing = await this.prisma.platformSetting.upsert({
+      where: { id: 'platform' },
+      create: {
+        id: 'platform',
+        serviceChargeAmount,
+      },
+      update: {
+        serviceChargeAmount,
+      },
+    });
+    await this.prisma.adminActionLog.create({
+      data: {
+        adminId,
+        action: 'PLATFORM_PRICING_UPDATED',
+        note: `Service charge updated to ${serviceChargeAmount.toFixed(2)}`,
+      },
+    });
+    return pricing;
+  }
   actionLogs() {
     return this.prisma.adminActionLog.findMany({
       orderBy: { createdAt: 'desc' },

@@ -1,15 +1,17 @@
 import {
   BadRequestException,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { sanitizeUser } from '../../common/utils/sanitize-user';
+import { EmailService } from '../email/email.service';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -27,12 +29,13 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   async registerBuyer(dto: RegisterBuyerDto) {
     await this.ensureEmailFree(dto.email);
     const password = await this.hash(dto.password);
-    const emailVerificationToken = randomBytes(32).toString('hex');
+    const emailVerificationOtp = this.generateOtp();
     const user = await this.prisma.user.create({
       data: {
         fullName: dto.fullName,
@@ -43,17 +46,28 @@ export class AuthService {
         state: dto.state,
         role: 'BUYER',
         status: 'PENDING_EMAIL_VERIFICATION',
-        emailVerificationToken: await this.hash(emailVerificationToken),
-        emailVerificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        emailVerificationToken: await this.hash(emailVerificationOtp),
+        emailVerificationExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
         buyerProfile: { create: {} },
       },
       include: { buyerProfile: true },
     });
+    try {
+      await this.emailService.sendBuyerVerificationOtp(
+        user.email,
+        user.fullName,
+        emailVerificationOtp,
+      );
+    } catch {
+      await this.prisma.user.delete({ where: { id: user.id } });
+      throw new InternalServerErrorException(
+        'Failed to send verification OTP email',
+      );
+    }
     return {
       user: sanitizeUser(user),
       message:
-        'Buyer registered. Verify email before using protected buyer flows.',
-      emailVerificationToken,
+        'Buyer registered. A verification OTP has been sent to the email address.',
     };
   }
 
@@ -231,10 +245,10 @@ export class AuthService {
       !user.emailVerificationExpiresAt ||
       user.emailVerificationExpiresAt < new Date()
     ) {
-      throw new BadRequestException('Email verification token expired');
+      throw new BadRequestException('Email verification OTP expired');
     }
-    if (!(await bcrypt.compare(dto.token, user.emailVerificationToken))) {
-      throw new BadRequestException('Invalid email verification token');
+    if (!(await bcrypt.compare(dto.otp, user.emailVerificationToken))) {
+      throw new BadRequestException('Invalid email verification OTP');
     }
     await this.prisma.user.update({
       where: { id: user.id },
@@ -257,6 +271,10 @@ export class AuthService {
 
   private async hash(value: string) {
     return bcrypt.hash(value, Number(this.config.get('BCRYPT_ROUNDS') ?? 12));
+  }
+
+  private generateOtp() {
+    return randomInt(0, 1_000_000).toString().padStart(6, '0');
   }
 
   private async signTokens(sub: string, email: string, role: string) {

@@ -49,6 +49,38 @@ const bookingGroomerSelect = {
   },
 };
 
+const bookingAvailabilitySlotInclude = {
+  select: {
+    id: true,
+    startTime: true,
+    endTime: true,
+    isBooked: true,
+    availability: {
+      select: {
+        id: true,
+        date: true,
+        isAvailable: true,
+      },
+    },
+  },
+};
+
+const bookingPayoutInclude = {
+  orderBy: { createdAt: 'desc' as const },
+  include: {
+    withdrawalItems: {
+      include: {
+        withdrawalRequest: {
+          select: {
+            status: true,
+            paidAt: true,
+          },
+        },
+      },
+    },
+  },
+};
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -60,21 +92,19 @@ export class BookingsService {
 
   async create(buyerId: string, dto: CreateBookingDto) {
     return this.prisma.$transaction(async (tx) => {
-      const [pet, groomer, service, slot] = await Promise.all([
-        tx.pet.findUniqueOrThrow({ where: { id: dto.petId } }),
-        tx.groomerProfile.findUniqueOrThrow({
-          where: { id: dto.groomerId },
-          include: { user: true },
-        }),
-        tx.service.findUniqueOrThrow({
-          where: { id: dto.serviceId },
-          include: { category: true, addonMappings: true },
-        }),
-        tx.groomerAvailabilitySlot.findUniqueOrThrow({
-          where: { id: dto.availabilitySlotId },
-          include: { availability: true },
-        }),
-      ]);
+      const pet = await tx.pet.findUniqueOrThrow({ where: { id: dto.petId } });
+      const groomer = await tx.groomerProfile.findUniqueOrThrow({
+        where: { id: dto.groomerId },
+        include: { user: true },
+      });
+      const service = await tx.service.findUniqueOrThrow({
+        where: { id: dto.serviceId },
+        include: { category: true, addonMappings: true },
+      });
+      const slot = await tx.groomerAvailabilitySlot.findUniqueOrThrow({
+        where: { id: dto.availabilitySlotId },
+        include: { availability: true },
+      });
       if (pet.buyerId !== buyerId)
         throw new ForbiddenException('Pet belongs to another buyer');
       if (
@@ -103,11 +133,16 @@ export class BookingsService {
         : [];
       if ((dto.addonIds?.length ?? 0) !== addons.length)
         throw new BadRequestException('One or more add-ons are invalid');
+      const pricing = await tx.platformSetting.findUnique({
+        where: { id: 'platform' },
+      });
       const subtotal =
         Number(service.price) +
         addons.reduce((sum, addon) => sum + Number(addon.price), 0);
+      const serviceCharge = Number(pricing?.serviceChargeAmount ?? 0);
       const platformFee = Number((subtotal * 0.1).toFixed(2));
       const groomerEarning = Number((subtotal - platformFee).toFixed(2));
+      const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
       const booking = await tx.booking.create({
         data: {
           bookingNumber: 'BK-' + Date.now(),
@@ -123,9 +158,10 @@ export class BookingsService {
           note: dto.note,
           status: 'PENDING',
           subtotalAmount: subtotal,
+          serviceChargeAmount: serviceCharge,
           platformFeeAmount: platformFee,
           groomerEarningAmount: groomerEarning,
-          totalAmount: subtotal,
+          totalAmount,
           services: {
             create: {
               serviceId: service.id,
@@ -147,7 +183,7 @@ export class BookingsService {
           },
           payments: {
             create: {
-              amount: subtotal,
+              amount: totalAmount,
               status: 'PAYMENT_PENDING',
             },
           },
@@ -159,6 +195,9 @@ export class BookingsService {
         data: { isBooked: true },
       });
       return booking;
+    }, {
+      maxWait: 10000,
+      timeout: 20000,
     });
   }
 
@@ -167,54 +206,82 @@ export class BookingsService {
     todayStart.setHours(0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const andConditions: any[] = [];
 
-    const where: any = {
-      ...(role === 'BUYER'
-        ? { buyerId: userId }
-        : role === 'GROOMER'
-          ? { groomerId: userId }
-          : {}),
-      ...(dto.status && { status: dto.status }),
-      ...(dto.today && {
+    if (role === 'BUYER') {
+      andConditions.push({ buyerId: userId });
+    } else if (role === 'GROOMER') {
+      andConditions.push({ groomerId: userId });
+    }
+
+    if (dto.status) {
+      andConditions.push({ status: dto.status });
+    }
+
+    if (dto.today === true) {
+      andConditions.push({
         availabilitySlot: {
-          availability: {
-            date: {
-              gte: todayStart,
-              lt: tomorrowStart,
-            },
+          startTime: {
+            gte: todayStart,
+            lt: tomorrowStart,
           },
         },
-      }),
-    };
+      });
+    } else if (dto.today === false) {
+      andConditions.push({
+        OR: [
+          { availabilitySlotId: null },
+          {
+            availabilitySlot: {
+              OR: [
+                { startTime: { lt: todayStart } },
+                { startTime: { gte: tomorrowStart } },
+              ],
+            },
+          },
+        ],
+      });
+    }
+
+    const where: any =
+      andConditions.length > 0 ? { AND: andConditions } : {};
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
         ...paginate(dto.page, dto.limit),
         orderBy: { [dto.sortBy]: dto.sortOrder },
         include: {
+          availabilitySlot: bookingAvailabilitySlotInclude,
           services: true,
           addons: true,
           pet: true,
           buyer: { select: bookingBuyerSelect },
           groomer: { select: bookingGroomerSelect },
+          payouts: bookingPayoutInclude,
         },
       }),
       this.prisma.booking.count({ where }),
     ]);
-    return paginated(items, total, dto.page, dto.limit);
+    return paginated(
+      items.map((booking) => this.withEarnings(booking)),
+      total,
+      dto.page,
+      dto.limit,
+    );
   }
 
   async detail(userId: string, role: string, id: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
       include: {
+        availabilitySlot: bookingAvailabilitySlotInclude,
         services: true,
         addons: true,
         pet: true,
         buyer: { select: bookingBuyerSelect },
         groomer: { select: bookingGroomerSelect },
         payments: true,
-        payouts: { orderBy: { createdAt: 'desc' } },
+        payouts: bookingPayoutInclude,
         reviews: true,
       },
     });
@@ -229,17 +296,77 @@ export class BookingsService {
 
   private withEarnings(booking: any) {
     const latestPayout = booking.payouts?.[0] ?? null;
+    const scheduledDate = booking.availabilitySlot?.availability?.date ?? null;
+    const payoutSummary = this.summarizePayout(latestPayout);
     return {
       ...booking,
+      scheduledDate,
       earnings: {
         subtotalAmount: booking.subtotalAmount,
+        serviceChargeAmount: booking.serviceChargeAmount,
         platformFeeAmount: booking.platformFeeAmount,
         groomerEarningAmount: booking.groomerEarningAmount,
         totalAmount: booking.totalAmount,
         payoutId: latestPayout?.id ?? null,
-        payoutStatus: latestPayout?.status ?? null,
-        payoutReleasedAt: latestPayout?.releasedAt ?? null,
+        payoutStatus: payoutSummary.status,
+        payoutPaidOutAt: payoutSummary.paidOutAt,
+        payoutReservedAmount: payoutSummary.reservedAmount,
+        payoutPaidAmount: payoutSummary.paidAmount,
+        payoutAvailableAmount: payoutSummary.availableAmount,
       },
+    };
+  }
+
+  private summarizePayout(payout: any) {
+    if (!payout) {
+      return {
+        status: null,
+        paidOutAt: null,
+        reservedAmount: 0,
+        paidAmount: 0,
+        availableAmount: 0,
+      };
+    }
+
+    const paidItems = payout.withdrawalItems.filter(
+      (item: any) => item.withdrawalRequest.status === 'PAID',
+    );
+    const reservedItems = payout.withdrawalItems.filter((item: any) =>
+      ['REQUESTED', 'APPROVED'].includes(item.withdrawalRequest.status),
+    );
+    const paidAmount = paidItems.reduce(
+      (sum: number, item: any) => sum + Number(item.allocatedAmount),
+      0,
+    );
+    const reservedAmount = reservedItems.reduce(
+      (sum: number, item: any) => sum + Number(item.allocatedAmount),
+      0,
+    );
+    const availableAmount = Number(
+      (Number(payout.amount) - paidAmount - reservedAmount).toFixed(2),
+    );
+    const latestPaidAt = paidItems
+      .map((item: any) => item.withdrawalRequest.paidAt)
+      .filter(Boolean)
+      .sort(
+        (a: Date, b: Date) =>
+          new Date(a).getTime() - new Date(b).getTime(),
+      )
+      .at(-1);
+
+    let status = 'PENDING';
+    if (availableAmount <= 0 && paidAmount >= Number(payout.amount)) {
+      status = 'PAID';
+    } else if (reservedAmount > 0 || paidAmount > 0) {
+      status = 'PROCESSING';
+    }
+
+    return {
+      status,
+      paidOutAt: latestPaidAt ?? null,
+      reservedAmount,
+      paidAmount,
+      availableAmount,
     };
   }
 
@@ -251,6 +378,7 @@ export class BookingsService {
       throw new ForbiddenException('Booking belongs to another groomer');
     if (!['PENDING', 'REQUESTED'].includes(booking.status))
       throw new BadRequestException('Only pending bookings can be accepted');
+    await this.payments.syncPaymentStatusForBooking(id).catch(() => null);
     const paidPayment = await this.prisma.payment.findFirst({
       where: {
         bookingId: id,
@@ -306,6 +434,32 @@ export class BookingsService {
       { bookingId: id },
     );
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
+  }
+
+  async markInProgress(groomerId: string, id: string) {
+    const booking = await this.prisma.booking.findUniqueOrThrow({
+      where: { id },
+    });
+    if (booking.groomerId !== groomerId) {
+      throw new ForbiddenException('Booking belongs to another groomer');
+    }
+    if (booking.status !== 'ACCEPTED') {
+      throw new BadRequestException(
+        'Only accepted bookings can be marked in progress',
+      );
+    }
+    const updated = await this.prisma.booking.update({
+      where: { id },
+      data: { status: 'IN_PROGRESS', inProgressAt: new Date() },
+    });
+    await this.notifications.create(
+      updated.buyerId,
+      'BOOKING_ACCEPTED',
+      'Service in progress',
+      'Your groomer has started working on the booking.',
+      { bookingId: id },
+    );
+    return updated;
   }
 
   async requestCompletion(
