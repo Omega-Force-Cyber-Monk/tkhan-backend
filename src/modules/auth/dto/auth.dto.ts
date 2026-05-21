@@ -106,6 +106,6 @@ export class ResetPasswordDto {
 }
 
 export class VerifyEmailDto {
-  @ApiProperty() @IsString() token: string;
-  @ApiPropertyOptional() @IsOptional() @IsEmail() email?: string;
+  @ApiProperty({ example: '123456' }) @IsString() @IsNotEmpty() otp: string;
+  @ApiProperty({ example: 'buyer@example.com' }) @IsEmail() email: string;
 }
