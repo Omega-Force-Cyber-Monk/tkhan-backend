@@ -1,21 +1,22 @@
--- CreateEnum
-CREATE TYPE "WithdrawalRequestStatus" AS ENUM ('REQUESTED', 'APPROVED', 'PAID', 'REJECTED', 'CANCELLED');
+-- CreateEnum (safe)
+DO $$ BEGIN
+  CREATE TYPE "WithdrawalRequestStatus" AS ENUM ('REQUESTED', 'APPROVED', 'PAID', 'REJECTED', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- DropIndex
+-- DropIndex (safe)
 DROP INDEX IF EXISTS "Payout_bookingId_idx";
-
--- DropIndex
 DROP INDEX IF EXISTS "Payout_groomerId_status_idx";
 
--- AlterTable
+-- AlterTable: drop columns only if they exist
 ALTER TABLE "Payout"
-DROP COLUMN "failureReason",
-DROP COLUMN "releasedAt",
-DROP COLUMN "status",
-DROP COLUMN "stripeTransferId";
+  DROP COLUMN IF EXISTS "failureReason",
+  DROP COLUMN IF EXISTS "releasedAt",
+  DROP COLUMN IF EXISTS "status",
+  DROP COLUMN IF EXISTS "stripeTransferId";
 
--- CreateTable
-CREATE TABLE "GroomerBankAccount" (
+-- CreateTable (safe)
+CREATE TABLE IF NOT EXISTS "GroomerBankAccount" (
     "id" TEXT NOT NULL,
     "groomerId" TEXT NOT NULL,
     "accountHolderName" TEXT NOT NULL,
@@ -31,8 +32,7 @@ CREATE TABLE "GroomerBankAccount" (
     CONSTRAINT "GroomerBankAccount_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "WithdrawalRequest" (
+CREATE TABLE IF NOT EXISTS "WithdrawalRequest" (
     "id" TEXT NOT NULL,
     "groomerId" TEXT NOT NULL,
     "bankAccountId" TEXT NOT NULL,
@@ -51,8 +51,7 @@ CREATE TABLE "WithdrawalRequest" (
     CONSTRAINT "WithdrawalRequest_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "WithdrawalRequestItem" (
+CREATE TABLE IF NOT EXISTS "WithdrawalRequestItem" (
     "id" TEXT NOT NULL,
     "withdrawalRequestId" TEXT NOT NULL,
     "payoutId" TEXT NOT NULL,
@@ -62,41 +61,40 @@ CREATE TABLE "WithdrawalRequestItem" (
     CONSTRAINT "WithdrawalRequestItem_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
-CREATE UNIQUE INDEX "Payout_bookingId_key" ON "Payout"("bookingId");
+-- CreateIndex (safe)
+CREATE UNIQUE INDEX IF NOT EXISTS "Payout_bookingId_key" ON "Payout"("bookingId");
+CREATE INDEX IF NOT EXISTS "Payout_groomerId_idx" ON "Payout"("groomerId");
+CREATE INDEX IF NOT EXISTS "GroomerBankAccount_groomerId_isDefault_idx" ON "GroomerBankAccount"("groomerId", "isDefault");
+CREATE INDEX IF NOT EXISTS "WithdrawalRequest_groomerId_status_idx" ON "WithdrawalRequest"("groomerId", "status");
+CREATE INDEX IF NOT EXISTS "WithdrawalRequest_bankAccountId_idx" ON "WithdrawalRequest"("bankAccountId");
+CREATE UNIQUE INDEX IF NOT EXISTS "WithdrawalRequestItem_withdrawalRequestId_payoutId_key" ON "WithdrawalRequestItem"("withdrawalRequestId", "payoutId");
+CREATE INDEX IF NOT EXISTS "WithdrawalRequestItem_payoutId_idx" ON "WithdrawalRequestItem"("payoutId");
 
--- CreateIndex
-CREATE INDEX "Payout_groomerId_idx" ON "Payout"("groomerId");
+-- AddForeignKey (safe)
+DO $$ BEGIN
+  ALTER TABLE "GroomerBankAccount" ADD CONSTRAINT "GroomerBankAccount_groomerId_fkey" FOREIGN KEY ("groomerId") REFERENCES "GroomerProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE INDEX "GroomerBankAccount_groomerId_isDefault_idx" ON "GroomerBankAccount"("groomerId", "isDefault");
+DO $$ BEGIN
+  ALTER TABLE "WithdrawalRequest" ADD CONSTRAINT "WithdrawalRequest_groomerId_fkey" FOREIGN KEY ("groomerId") REFERENCES "GroomerProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE INDEX "WithdrawalRequest_groomerId_status_idx" ON "WithdrawalRequest"("groomerId", "status");
+DO $$ BEGIN
+  ALTER TABLE "WithdrawalRequest" ADD CONSTRAINT "WithdrawalRequest_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "GroomerBankAccount"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE INDEX "WithdrawalRequest_bankAccountId_idx" ON "WithdrawalRequest"("bankAccountId");
+DO $$ BEGIN
+  ALTER TABLE "WithdrawalRequestItem" ADD CONSTRAINT "WithdrawalRequestItem_withdrawalRequestId_fkey" FOREIGN KEY ("withdrawalRequestId") REFERENCES "WithdrawalRequest"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE UNIQUE INDEX "WithdrawalRequestItem_withdrawalRequestId_payoutId_key" ON "WithdrawalRequestItem"("withdrawalRequestId", "payoutId");
+DO $$ BEGIN
+  ALTER TABLE "WithdrawalRequestItem" ADD CONSTRAINT "WithdrawalRequestItem_payoutId_fkey" FOREIGN KEY ("payoutId") REFERENCES "Payout"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
--- CreateIndex
-CREATE INDEX "WithdrawalRequestItem_payoutId_idx" ON "WithdrawalRequestItem"("payoutId");
-
--- AddForeignKey
-ALTER TABLE "GroomerBankAccount" ADD CONSTRAINT "GroomerBankAccount_groomerId_fkey" FOREIGN KEY ("groomerId") REFERENCES "GroomerProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WithdrawalRequest" ADD CONSTRAINT "WithdrawalRequest_groomerId_fkey" FOREIGN KEY ("groomerId") REFERENCES "GroomerProfile"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WithdrawalRequest" ADD CONSTRAINT "WithdrawalRequest_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "GroomerBankAccount"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WithdrawalRequestItem" ADD CONSTRAINT "WithdrawalRequestItem_withdrawalRequestId_fkey" FOREIGN KEY ("withdrawalRequestId") REFERENCES "WithdrawalRequest"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WithdrawalRequestItem" ADD CONSTRAINT "WithdrawalRequestItem_payoutId_fkey" FOREIGN KEY ("payoutId") REFERENCES "Payout"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- DropTable
-DROP TABLE "GroomerPaymentMethod";
+-- DropTable (safe)
+DROP TABLE IF EXISTS "GroomerPaymentMethod";
