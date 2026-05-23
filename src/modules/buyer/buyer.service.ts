@@ -77,7 +77,10 @@ export class BuyerService {
           { about: { contains: search, mode: 'insensitive' } },
           { user: { fullName: { contains: search, mode: 'insensitive' } } },
           { user: { email: { contains: search, mode: 'insensitive' } } },
-          { user: { locationText: { contains: search, mode: 'insensitive' } } },
+          { user: { streetAddress: { contains: search, mode: 'insensitive' } } },
+          { user: { city: { contains: search, mode: 'insensitive' } } },
+          { user: { province: { contains: search, mode: 'insensitive' } } },
+          { user: { postalCode: { contains: search, mode: 'insensitive' } } },
           {
             services: {
               some: {
@@ -116,8 +119,9 @@ export class BuyerService {
         status: 'ACTIVE',
         ...(state && {
           OR: [
-            { state: { equals: state, mode: 'insensitive' } },
-            { locationText: { contains: state, mode: 'insensitive' } },
+            { province: { equals: state, mode: 'insensitive' } },
+            { city: { contains: state, mode: 'insensitive' } },
+            { streetAddress: { contains: state, mode: 'insensitive' } },
           ],
         }),
       },
