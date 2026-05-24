@@ -18,13 +18,16 @@ export class BuyerService {
         where: { active: true },
         orderBy: { name: 'asc' },
       }),
-      this.searchGroomers({
-        page: 1,
-        limit: 12,
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
-        state,
-      }),
+      this.searchGroomers(
+        {
+          page: 1,
+          limit: 12,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          state,
+        },
+        userId,
+      ),
     ]);
     return { categories, groomers, userId };
   }
@@ -157,47 +160,37 @@ export class BuyerService {
     }
 
     const ratingByUserId = new Map<string, number>();
-    const favoriteByGroomerId = new Set<string>();
     try {
-      const favoritesPromise: Promise<Array<{ groomerId: string }>> = buyerId
-        ? this.prisma.buyerFavoriteGroomer.findMany({
-            where: {
-              buyerId,
-              groomerId: { in: items.map((g) => g.id) },
-            },
-            select: { groomerId: true },
-          })
-        : Promise.resolve([]);
-      const [ratings, favorites] = await Promise.all([
-        this.prisma.review.groupBy({
-          by: ['revieweeId'],
-          where: {
-            revieweeId: { in: items.map((g) => g.userId) },
-            targetType: 'GROOMER',
-          },
-          _avg: { rating: true },
-        }),
-        favoritesPromise,
-      ]);
+      const ratings = await this.prisma.review.groupBy({
+        by: ['revieweeId'],
+        where: {
+          revieweeId: { in: items.map((g) => g.userId) },
+          targetType: 'GROOMER',
+        },
+        _avg: { rating: true },
+      });
       ratings.forEach((rating) => {
         ratingByUserId.set(rating.revieweeId, rating._avg.rating ?? 0);
       });
-      favorites.forEach((favorite) => {
-        favoriteByGroomerId.add(favorite.groomerId);
-      });
     } catch (error) {
       this.logger.warn(
-        `Could not load groomer ratings/favorites for buyer search. Falling back to defaults. ${
+        `Could not load groomer ratings for buyer search. Falling back to defaults. ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
 
+    const favoritesByGroomerId = await this.favoriteByGroomerId(
+      buyerId,
+      items.map((g) => g.id),
+    );
     const groomers = items.map((g) => {
       const prices = g.services.map((s) => Number(s.price));
+      const favorite = favoritesByGroomerId.get(g.id);
       return {
         ...g,
-        isFavorite: favoriteByGroomerId.has(g.id),
+        isFavorite: Boolean(favorite),
+        favoriteId: favorite?.id ?? null,
         averageRating: ratingByUserId.get(g.userId) ?? 0,
         priceRange: prices.length
           ? { min: Math.min(...prices), max: Math.max(...prices) }
@@ -245,23 +238,32 @@ export class BuyerService {
     if (!groomer) {
       throw new NotFoundException('Groomer not found');
     }
-    const isFavorite = buyerId
-      ? Boolean(
-          await this.prisma.buyerFavoriteGroomer.findUnique({
-            where: {
-              buyerId_groomerId: {
-                buyerId,
-                groomerId: groomer.id,
-              },
-            },
-            select: { id: true },
-          }),
-        )
-      : false;
+
+    const favorite = buyerId
+      ? await this.prisma.buyerFavoriteGroomer.findUnique({
+          where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
+        })
+      : null;
+
     return {
       ...groomer,
-      isFavorite,
+      isFavorite: Boolean(favorite),
+      favoriteId: favorite?.id ?? null,
     };
+  }
+
+  private async favoriteByGroomerId(
+    buyerId: string | undefined,
+    ids: string[],
+  ) {
+    if (!buyerId || ids.length === 0)
+      return new Map<string, { id: string; groomerId: string }>();
+
+    const favorites = await this.prisma.buyerFavoriteGroomer.findMany({
+      where: { buyerId, groomerId: { in: ids } },
+      select: { id: true, groomerId: true },
+    });
+    return new Map(favorites.map((favorite) => [favorite.groomerId, favorite]));
   }
 
   private handleDatabaseError(error: unknown): never {
