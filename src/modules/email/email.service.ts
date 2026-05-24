@@ -45,6 +45,15 @@ export class EmailService {
     const user = this.config.get<string>('SMTP_USER');
     const pass = this.config.get<string>('SMTP_PASS');
     const secure = this.config.get<string>('SMTP_SECURE') === 'true';
+    const connectionTimeout = Number(
+      this.config.get<string>('SMTP_CONNECTION_TIMEOUT_MS') || 10000,
+    );
+    const greetingTimeout = Number(
+      this.config.get<string>('SMTP_GREETING_TIMEOUT_MS') || 10000,
+    );
+    const socketTimeout = Number(
+      this.config.get<string>('SMTP_SOCKET_TIMEOUT_MS') || 15000,
+    );
 
     if (!host || !user || !pass) {
       throw new InternalServerErrorException(
@@ -57,6 +66,9 @@ export class EmailService {
       port,
       secure,
       auth: { user, pass },
+      connectionTimeout,
+      greetingTimeout,
+      socketTimeout,
     });
   }
 

@@ -61,10 +61,16 @@ export class AuthService {
         user.fullName,
         emailVerificationOtp,
       );
-    } catch {
+    } catch (error) {
       await this.prisma.user.delete({ where: { id: user.id } });
+      const message =
+        error instanceof Error &&
+        'message' in error &&
+        typeof error.message === 'string'
+          ? error.message
+          : 'Failed to send verification OTP email';
       throw new InternalServerErrorException(
-        'Failed to send verification OTP email',
+        message,
       );
     }
     return {
