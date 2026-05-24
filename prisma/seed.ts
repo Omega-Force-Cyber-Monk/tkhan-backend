@@ -223,8 +223,9 @@ async function seedPendingGroomer() {
       fullName: 'Pending Groomer Demo',
       phone: '+15550004001',
       password,
-      locationText: 'Houston, TX',
-      state: 'TX',
+      streetAddress: '400 Demo Lane',
+      city: 'Houston',
+      province: 'TX',
       role: 'GROOMER',
       emailVerified: true,
       status: 'ACTIVE',
@@ -240,8 +241,9 @@ async function seedPendingGroomer() {
       email: 'pending.groomer@tkhan.local',
       phone: '+15550004001',
       password,
-      locationText: 'Houston, TX',
-      state: 'TX',
+      streetAddress: '400 Demo Lane',
+      city: 'Houston',
+      province: 'TX',
       role: 'GROOMER',
       emailVerified: true,
       status: 'ACTIVE',
@@ -441,10 +443,6 @@ async function seedDemoPayout() {
         amount: 72,
         platformFee: 8,
         currency: 'usd',
-        status: 'PENDING',
-        releasedAt: null,
-        stripeTransferId: null,
-        failureReason: null,
       },
     });
   } else {
@@ -455,7 +453,6 @@ async function seedDemoPayout() {
         amount: 72,
         platformFee: 8,
         currency: 'usd',
-        status: 'PENDING',
       },
     });
   }
