@@ -10,14 +10,32 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:5174',
-  ];
+  const allowedOrigins = (
+    process.env.CORS_ORIGINS ??
+    'http://localhost:5173,http://localhost:3000,http://localhost:5174,https://idyllic-fenglisu-b9c4a3.netlify.app'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const tryCloudflarePattern = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i;
 
   app.setGlobalPrefix('api/v1');
-  app.enableCors({ origin: allowedOrigins, credentials: true });
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        tryCloudflarePattern.test(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  });
   app.use(helmet());
   app.use(compression());
   app.use(cookieParser());
