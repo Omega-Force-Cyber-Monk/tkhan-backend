@@ -9,8 +9,11 @@ type AdminSeed = {
   email: string;
   phone: string;
   password: string;
-  locationText?: string;
-  state?: string;
+  streetAddress?: string;
+  unitSuite?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
 };
 
 type DemoUserSeed = AdminSeed & {
@@ -61,8 +64,11 @@ function configuredAdmins(): AdminSeed[] {
       email: process.env.ADMIN_EMAIL || 'admin@tkhan.local',
       phone: process.env.ADMIN_PHONE || '+10000000000',
       password: process.env.ADMIN_PASSWORD || 'Admin@123456',
-      locationText: process.env.ADMIN_LOCATION_TEXT,
-      state: process.env.ADMIN_STATE,
+      streetAddress: process.env.ADMIN_STREET_ADDRESS,
+      unitSuite: process.env.ADMIN_UNIT_SUITE,
+      city: process.env.ADMIN_CITY,
+      province: process.env.ADMIN_PROVINCE,
+      postalCode: process.env.ADMIN_POSTAL_CODE,
     },
   ];
 
@@ -72,8 +78,10 @@ function configuredAdmins(): AdminSeed[] {
       email: 'admin@gmail.com',
       phone: '0123456789',
       password: '123456',
-      locationText: 'dhaka',
-      state: 'dhaka',
+      streetAddress: 'House 12, Road 7',
+      city: 'Dhaka',
+      province: 'Dhaka',
+      postalCode: '1207',
     });
   }
 
@@ -90,8 +98,11 @@ async function seedAdmin(admin: AdminSeed) {
       fullName: admin.fullName,
       phone: admin.phone,
       password,
-      locationText: admin.locationText,
-      state: admin.state,
+      streetAddress: admin.streetAddress,
+      unitSuite: admin.unitSuite,
+      city: admin.city,
+      province: admin.province,
+      postalCode: admin.postalCode,
       role: 'ADMIN',
       emailVerified: true,
       status: 'ACTIVE',
@@ -107,8 +118,11 @@ async function seedAdmin(admin: AdminSeed) {
       email: normalizedEmail,
       phone: admin.phone,
       password,
-      locationText: admin.locationText,
-      state: admin.state,
+      streetAddress: admin.streetAddress,
+      unitSuite: admin.unitSuite,
+      city: admin.city,
+      province: admin.province,
+      postalCode: admin.postalCode,
       role: 'ADMIN',
       emailVerified: true,
       status: 'ACTIVE',
@@ -129,8 +143,11 @@ async function seedDemoUser(user: DemoUserSeed) {
       fullName: user.fullName,
       phone: user.phone,
       password,
-      locationText: user.locationText,
-      state: user.state,
+      streetAddress: user.streetAddress,
+      unitSuite: user.unitSuite,
+      city: user.city,
+      province: user.province,
+      postalCode: user.postalCode,
       role: user.role,
       emailVerified: true,
       status: 'ACTIVE',
@@ -146,8 +163,11 @@ async function seedDemoUser(user: DemoUserSeed) {
       email: normalizedEmail,
       phone: user.phone,
       password,
-      locationText: user.locationText,
-      state: user.state,
+      streetAddress: user.streetAddress,
+      unitSuite: user.unitSuite,
+      city: user.city,
+      province: user.province,
+      postalCode: user.postalCode,
       role: user.role,
       emailVerified: true,
       status: 'ACTIVE',
@@ -178,8 +198,9 @@ async function seedDemoUser(user: DemoUserSeed) {
         idNumber: `DEMO-${savedUser.id.slice(0, 8)}`,
         idType: 'PASSPORT',
         businessName: `${user.fullName} Grooming`,
-        serviceArea: user.locationText || 'Austin metro',
-        businessAddress: user.locationText || '120 Market Street, Austin, TX',
+        serviceArea: user.city || 'Austin metro',
+        businessAddress:
+          user.streetAddress || '120 Market Street, Austin, TX',
         idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
         idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
         selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
@@ -459,8 +480,10 @@ async function main() {
         email: 'buyer1@tkhan.local',
         phone: '+15550001001',
         password: 'Password@123',
-        locationText: 'Austin, TX',
-        state: 'TX',
+        streetAddress: '120 Market Street',
+        city: 'Austin',
+        province: 'TX',
+        postalCode: '78701',
       },
       {
         role: 'BUYER',
@@ -468,8 +491,10 @@ async function main() {
         email: 'buyer2@tkhan.local',
         phone: '+15550001002',
         password: 'Password@123',
-        locationText: 'Dallas, TX',
-        state: 'TX',
+        streetAddress: '240 Elm Street',
+        city: 'Dallas',
+        province: 'TX',
+        postalCode: '75201',
       },
       {
         role: 'GROOMER',
@@ -477,8 +502,10 @@ async function main() {
         email: 'groomer1@tkhan.local',
         phone: '+15550002001',
         password: 'Password@123',
-        locationText: 'Austin, TX',
-        state: 'TX',
+        streetAddress: '120 Market Street',
+        city: 'Austin',
+        province: 'TX',
+        postalCode: '78701',
       },
       {
         role: 'GROOMER',
@@ -486,8 +513,10 @@ async function main() {
         email: 'groomer2@tkhan.local',
         phone: '+15550002002',
         password: 'Password@123',
-        locationText: 'Dallas, TX',
-        state: 'TX',
+        streetAddress: '240 Elm Street',
+        city: 'Dallas',
+        province: 'TX',
+        postalCode: '75201',
       },
       {
         role: 'ADMIN',
@@ -495,8 +524,10 @@ async function main() {
         email: 'admin1@tkhan.local',
         phone: '+15550003001',
         password: 'Password@123',
-        locationText: 'Austin, TX',
-        state: 'TX',
+        streetAddress: '120 Market Street',
+        city: 'Austin',
+        province: 'TX',
+        postalCode: '78701',
       },
       {
         role: 'ADMIN',
@@ -504,8 +535,10 @@ async function main() {
         email: 'admin2@tkhan.local',
         phone: '+15550003002',
         password: 'Password@123',
-        locationText: 'Dallas, TX',
-        state: 'TX',
+        streetAddress: '240 Elm Street',
+        city: 'Dallas',
+        province: 'TX',
+        postalCode: '75201',
       },
     ] satisfies DemoUserSeed[]) {
       await seedDemoUser(user);

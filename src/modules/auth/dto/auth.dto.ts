@@ -31,8 +31,12 @@ export class RegisterBuyerDto {
   @ApiProperty({ example: '+15551234567' }) @IsString() phone: string;
   @ApiProperty({ example: 'buyer@example.com' }) @IsEmail() email: string;
   @ApiProperty({ minLength: 8 }) @IsString() @MinLength(8) password: string;
-  @ApiProperty({ example: 'Austin, TX' }) @IsString() locationText: string;
-  @ApiProperty({ example: 'TX' }) @IsString() state: string;
+  @ApiProperty({ example: '123 Main St' }) @IsString() streetAddress: string;
+  @ApiPropertyOptional({ example: 'Apt 4B' }) @IsOptional() @IsString()
+  unitSuite?: string;
+  @ApiProperty({ example: 'Toronto' }) @IsString() city: string;
+  @ApiProperty({ example: 'Ontario' }) @IsString() province: string;
+  @ApiProperty({ example: 'M5V 2T6' }) @IsString() postalCode: string;
 }
 
 export class RegisterGroomerDto extends RegisterBuyerDto {

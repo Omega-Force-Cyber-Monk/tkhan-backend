@@ -42,8 +42,11 @@ export class AuthService {
         phone: dto.phone,
         email: dto.email.toLowerCase(),
         password,
-        locationText: dto.locationText,
-        state: dto.state,
+        streetAddress: dto.streetAddress,
+        unitSuite: dto.unitSuite,
+        city: dto.city,
+        province: dto.province,
+        postalCode: dto.postalCode,
         role: 'BUYER',
         status: 'PENDING_EMAIL_VERIFICATION',
         emailVerificationToken: await this.hash(emailVerificationOtp),
@@ -58,10 +61,16 @@ export class AuthService {
         user.fullName,
         emailVerificationOtp,
       );
-    } catch {
+    } catch (error) {
       await this.prisma.user.delete({ where: { id: user.id } });
+      const message =
+        error instanceof Error &&
+        'message' in error &&
+        typeof error.message === 'string'
+          ? error.message
+          : 'Failed to send verification OTP email';
       throw new InternalServerErrorException(
-        'Failed to send verification OTP email',
+        message,
       );
     }
     return {
@@ -84,8 +93,11 @@ export class AuthService {
         email: dto.email.toLowerCase(),
         password,
         profileImage: dto.profileImage,
-        locationText: dto.locationText,
-        state: dto.state,
+        streetAddress: dto.streetAddress,
+        unitSuite: dto.unitSuite,
+        city: dto.city,
+        province: dto.province,
+        postalCode: dto.postalCode,
         role: 'GROOMER',
         status: 'INACTIVE',
         groomerProfile: {

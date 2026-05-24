@@ -123,8 +123,11 @@ model User {
   email                  String                 @unique
   password               String
   profileImage           String?
-  locationText           String?
-  state                  String?
+  streetAddress          String?
+  unitSuite              String?
+  city                   String?
+  province               String?
+  postalCode             String?
   role                   UserRole
   emailVerified          Boolean                @default(false)
   emailVerificationToken String?
@@ -153,7 +156,8 @@ model User {
   updatedAt              DateTime               @updatedAt
 
   @@index([role, status])
-  @@index([state])
+  @@index([province])
+  @@index([city])
   @@index([isBlocked])
 }
 

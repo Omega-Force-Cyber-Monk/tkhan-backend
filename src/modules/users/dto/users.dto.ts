@@ -20,8 +20,11 @@ export class UpdateProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() fullName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() profileImage?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() locationText?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() state?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() streetAddress?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() unitSuite?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() province?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;
 }
 
 export class BlockUserDto {

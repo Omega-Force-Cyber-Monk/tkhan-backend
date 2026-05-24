@@ -151,8 +151,11 @@ export class ChatService {
           fullName: true,
           profileImage: true,
           role: true,
-          locationText: true,
-          state: true,
+          streetAddress: true,
+          unitSuite: true,
+          city: true,
+          province: true,
+          postalCode: true,
           groomerProfile: {
             select: {
               id: true,
@@ -203,8 +206,11 @@ export class ChatService {
                 role: partner.role,
                 fullName: partner.fullName,
                 profileImage: partner.profileImage,
-                locationText: partner.locationText,
-                state: partner.state,
+                streetAddress: partner.streetAddress,
+                unitSuite: partner.unitSuite,
+                city: partner.city,
+                province: partner.province,
+                postalCode: partner.postalCode,
                 groomerProfileId: partner.groomerProfile?.id ?? null,
                 businessName: partner.groomerProfile?.businessName ?? null,
               }

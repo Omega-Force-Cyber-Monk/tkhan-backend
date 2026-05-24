@@ -32,8 +32,11 @@ export class CreateAdminDto {
   @ApiProperty() @IsEmail() email: string;
   @ApiProperty() @IsString() phone: string;
   @ApiProperty() @IsString() password: string;
-  @ApiPropertyOptional() @IsString() locationText?: string;
-  @ApiPropertyOptional() @IsString() state?: string;
+  @ApiPropertyOptional() @IsString() streetAddress?: string;
+  @ApiPropertyOptional() @IsString() unitSuite?: string;
+  @ApiPropertyOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsString() province?: string;
+  @ApiPropertyOptional() @IsString() postalCode?: string;
 }
 
 export class AdminUserFilterDto extends PaginationDto {

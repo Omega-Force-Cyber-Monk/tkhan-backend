@@ -37,8 +37,11 @@ export class UsersController {
       properties: {
         fullName: { type: 'string' },
         phone: { type: 'string' },
-        locationText: { type: 'string' },
-        state: { type: 'string' },
+        streetAddress: { type: 'string' },
+        unitSuite: { type: 'string' },
+        city: { type: 'string' },
+        province: { type: 'string' },
+        postalCode: { type: 'string' },
         profileImage: { type: 'string', format: 'binary' },
       },
     },
