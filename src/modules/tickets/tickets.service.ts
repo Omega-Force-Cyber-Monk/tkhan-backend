@@ -118,7 +118,7 @@ export class TicketsService {
       'TICKET_REPLY',
       'Ticket reply',
       dto.message,
-      { ticketId },
+      { targetScreen: 'ticket_details', ticketId },
     );
     return message;
   }

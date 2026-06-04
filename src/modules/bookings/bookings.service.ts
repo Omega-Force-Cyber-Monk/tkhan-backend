@@ -403,7 +403,7 @@ export class BookingsService {
       'BOOKING_ACCEPTED',
       'Booking accepted',
       'Your groomer accepted the booking.',
-      { bookingId: id },
+      { targetScreen: 'booking_details', bookingId: id },
     );
     return updated;
   }
@@ -434,7 +434,7 @@ export class BookingsService {
       'BOOKING_REJECTED',
       'Booking rejected',
       dto.reason,
-      { bookingId: id },
+      { targetScreen: 'booking_details', bookingId: id },
     );
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
@@ -460,7 +460,7 @@ export class BookingsService {
       'BOOKING_ACCEPTED',
       'Service in progress',
       'Your groomer has started working on the booking.',
-      { bookingId: id },
+      { targetScreen: 'booking_details', bookingId: id },
     );
     return updated;
   }
@@ -492,7 +492,7 @@ export class BookingsService {
       'COMPLETION_REQUESTED',
       'Completion requested',
       'Please approve completion if the service is done.',
-      { bookingId: id },
+      { targetScreen: 'booking_details', bookingId: id },
     );
     return updated;
   }
@@ -525,7 +525,7 @@ export class BookingsService {
       'BOOKING_COMPLETED',
       'Booking completed',
       'The buyer approved completion.',
-      { bookingId: id },
+      { targetScreen: 'booking_details', bookingId: id },
     );
     await this.payouts.releaseForBooking(id);
     return updated;

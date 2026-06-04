@@ -507,7 +507,10 @@ export class PayoutsService {
       'ADMIN_ACTION',
       'Withdrawal request approved',
       'Your withdrawal request has been approved and is awaiting payment.',
-      { withdrawalRequestId: updated.id },
+      {
+        targetScreen: 'withdrawal_details',
+        withdrawalRequestId: updated.id,
+      },
     );
     return updated;
   }
@@ -550,7 +553,10 @@ export class PayoutsService {
       'ADMIN_ACTION',
       'Withdrawal request rejected',
       dto.reason,
-      { withdrawalRequestId: updated.id },
+      {
+        targetScreen: 'withdrawal_details',
+        withdrawalRequestId: updated.id,
+      },
     );
     return updated;
   }
@@ -597,6 +603,7 @@ export class PayoutsService {
       'Withdrawal request paid',
       'Your withdrawal has been marked as paid by the admin.',
       {
+        targetScreen: 'withdrawal_details',
         withdrawalRequestId: updated.id,
         transferReference: updated.transferReference,
       },

@@ -279,14 +279,14 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'PAYMENT_SUCCESS',
       'Payment received',
       'Your booking payment is held until completion.',
-      { bookingId: booking.id },
+      { targetScreen: 'booking_details', bookingId: booking.id },
     );
     await this.notifications.create(
       booking.groomerId,
       'BOOKING_CREATED',
       'New booking request',
       'A buyer requested a booking.',
-      { bookingId: booking.id },
+      { targetScreen: 'booking_details', bookingId: booking.id },
     );
     return payment;
   }
@@ -341,7 +341,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'PAYMENT_REFUND',
       'Payment refunded',
       'A full refund was issued.',
-      { bookingId },
+      { targetScreen: 'booking_details', bookingId },
     );
     return { refundId: refund?.id, booking };
   }

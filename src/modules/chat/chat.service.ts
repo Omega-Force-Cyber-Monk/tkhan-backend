@@ -103,7 +103,7 @@ export class ChatService {
       'NEW_MESSAGE',
       'New message',
       notificationBody,
-      { conversationId: conversation.id },
+      { targetScreen: 'chat', conversationId: conversation.id },
     );
     return { conversation, message, recipientId };
   }
