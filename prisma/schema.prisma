@@ -450,6 +450,8 @@ model GroomerBankAccount {
   accountHolderName  String
   bankName           String
   accountNumber      String
+  transitNumber      String?
+  institutionNumber  String?
   branchName         String?
   routingNumber      String?
   mobileBankingType  String?
@@ -589,14 +591,19 @@ model SupportTicket {
 }
 
 model SupportTicketMessage {
-  id          String           @id @default(uuid())
-  ticketId    String
-  senderId    String?
-  ticket      SupportTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  sender      User?            @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  senderType  TicketSenderType
-  message     String
-  createdAt   DateTime         @default(now())
+  id              String           @id @default(uuid())
+  ticketId        String
+  senderId        String?
+  ticket          SupportTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender          User?            @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  senderType      TicketSenderType
+  message         String
+  requesterReadAt DateTime?
+  adminReadAt     DateTime?
+  createdAt       DateTime         @default(now())
+
+  @@index([ticketId, requesterReadAt])
+  @@index([ticketId, adminReadAt])
 }
 
 model AdminActionLog {

@@ -14,9 +14,9 @@ export class CreateGroomerBankAccountDto {
   @ApiProperty() @IsString() accountHolderName!: string;
   @ApiProperty() @IsString() bankName!: string;
   @ApiProperty() @IsString() accountNumber!: string;
+  @ApiProperty() @IsString() transitNumber!: string;
+  @ApiProperty() @IsString() institutionNumber!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() branchName?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() routingNumber?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() mobileBankingType?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isDefault?: boolean;
 }
 
@@ -24,9 +24,9 @@ export class UpdateGroomerBankAccountDto {
   @ApiPropertyOptional() @IsOptional() @IsString() accountHolderName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() bankName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() accountNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() transitNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() institutionNumber?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() branchName?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() routingNumber?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() mobileBankingType?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isDefault?: boolean;
 }
 

@@ -240,9 +240,9 @@ export class PayoutsService {
           accountHolderName: dto.accountHolderName,
           bankName: dto.bankName,
           accountNumber: dto.accountNumber,
+          transitNumber: dto.transitNumber,
+          institutionNumber: dto.institutionNumber,
           branchName: dto.branchName,
-          routingNumber: dto.routingNumber,
-          mobileBankingType: dto.mobileBankingType,
           isDefault: makeDefault,
         },
       });
@@ -275,13 +275,11 @@ export class PayoutsService {
           }),
           ...(dto.bankName && { bankName: dto.bankName }),
           ...(dto.accountNumber && { accountNumber: dto.accountNumber }),
+          ...(dto.transitNumber && { transitNumber: dto.transitNumber }),
+          ...(dto.institutionNumber && {
+            institutionNumber: dto.institutionNumber,
+          }),
           ...(dto.branchName !== undefined && { branchName: dto.branchName }),
-          ...(dto.routingNumber !== undefined && {
-            routingNumber: dto.routingNumber,
-          }),
-          ...(dto.mobileBankingType !== undefined && {
-            mobileBankingType: dto.mobileBankingType,
-          }),
           ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
         },
       });
