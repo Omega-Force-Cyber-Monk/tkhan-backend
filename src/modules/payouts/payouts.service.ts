@@ -140,6 +140,58 @@ export class PayoutsService {
     });
   }
 
+  async detail(userId: string, role: string, id: string) {
+    const payout = await this.prisma.payout.findUnique({
+      where: { id },
+      include: {
+        booking: {
+          include: {
+            buyer: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                profileImage: true,
+              },
+            },
+            groomer: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                phone: true,
+                profileImage: true,
+              },
+            },
+            pet: true,
+            services: true,
+            addons: true,
+          },
+        },
+        groomer: {
+          include: { user: true },
+        },
+        withdrawalItems: {
+          include: {
+            withdrawalRequest: {
+              include: {
+                bankAccount: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!payout) throw new NotFoundException('Payout transaction not found');
+
+    if (role !== 'ADMIN' && payout.groomer.userId !== userId) {
+      throw new ForbiddenException('Payout transaction access denied');
+    }
+
+    return payout;
+  }
+
   async summary(userId: string) {
     const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },

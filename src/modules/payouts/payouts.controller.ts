@@ -36,6 +36,13 @@ export class PayoutsController {
     return this.payoutsService.list();
   }
 
+  @Roles('ADMIN', 'GROOMER')
+  @ApiOperation({ summary: 'Admin or groomer: view single payout transaction detail' })
+  @Get('transactions/:id')
+  detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.payoutsService.detail(user.sub, user.role, id);
+  }
+
   @Roles('GROOMER')
   @ApiOperation({ summary: 'Groomer only: view own payout summary' })
   @Get('summary')
