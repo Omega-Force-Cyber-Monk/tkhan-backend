@@ -38,6 +38,48 @@ const withdrawalRequestInclude = {
   },
 } as const;
 
+const withdrawalRequestDetailInclude = {
+  bankAccount: true,
+  groomer: {
+    include: {
+      user: true,
+    },
+  },
+  items: {
+    include: {
+      payout: {
+        include: {
+          booking: {
+            include: {
+              buyer: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+              groomer: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  phone: true,
+                  profileImage: true,
+                },
+              },
+              pet: true,
+              services: true,
+              addons: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 @Injectable()
 export class PayoutsService {
   constructor(
@@ -183,13 +225,33 @@ export class PayoutsService {
         },
       },
     });
-    if (!payout) throw new NotFoundException('Payout transaction not found');
+    if (payout) {
+      if (role !== 'ADMIN' && payout.groomer.userId !== userId) {
+        throw new ForbiddenException('Payout transaction access denied');
+      }
 
-    if (role !== 'ADMIN' && payout.groomer.userId !== userId) {
-      throw new ForbiddenException('Payout transaction access denied');
+      return {
+        type: 'PAYOUT',
+        data: payout,
+      };
     }
 
-    return payout;
+    const withdrawalRequest = await this.prisma.withdrawalRequest.findUnique({
+      where: { id },
+      include: withdrawalRequestDetailInclude,
+    });
+    if (!withdrawalRequest) {
+      throw new NotFoundException('Transaction not found');
+    }
+
+    if (role !== 'ADMIN' && withdrawalRequest.groomer.userId !== userId) {
+      throw new ForbiddenException('Withdrawal request access denied');
+    }
+
+    return {
+      type: 'WITHDRAWAL_REQUEST',
+      data: withdrawalRequest,
+    };
   }
 
   async summary(userId: string) {
