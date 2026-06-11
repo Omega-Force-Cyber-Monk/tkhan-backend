@@ -239,16 +239,61 @@ export class BuyerService {
       throw new NotFoundException('Groomer not found');
     }
 
-    const favorite = buyerId
-      ? await this.prisma.buyerFavoriteGroomer.findUnique({
-          where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
-        })
-      : null;
+    const [favorite, ratingAgg, reviews] = await Promise.all([
+      buyerId
+        ? this.prisma.buyerFavoriteGroomer.findUnique({
+            where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
+          })
+        : Promise.resolve(null),
+      this.prisma.review.aggregate({
+        where: {
+          revieweeId: groomer.userId,
+          targetType: 'GROOMER',
+        },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.review.findMany({
+        where: {
+          revieweeId: groomer.userId,
+          targetType: 'GROOMER',
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          reviewer: {
+            select: {
+              id: true,
+              fullName: true,
+              profileImage: true,
+            },
+          },
+          booking: {
+            select: {
+              id: true,
+              bookingNumber: true,
+              completedAt: true,
+              pet: {
+                select: {
+                  id: true,
+                  name: true,
+                  petType: true,
+                  petSize: true,
+                  petImage: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     return {
       ...groomer,
       isFavorite: Boolean(favorite),
       favoriteId: favorite?.id ?? null,
+      averageRating: ratingAgg._avg.rating ?? 0,
+      totalReviews: ratingAgg._count._all,
+      reviews,
     };
   }
 
