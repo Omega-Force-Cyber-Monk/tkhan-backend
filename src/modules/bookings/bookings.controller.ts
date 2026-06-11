@@ -5,11 +5,12 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   Query,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -259,18 +260,48 @@ export class BookingsController {
   ) {
     return this.bookingsService.reject(user.sub, id, dto);
   }
-  @Roles('GROOMER') @Patch(':id/in-progress') markInProgress(
+  @Roles('GROOMER')
+  @Patch(':id/in-progress')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        beforeImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('beforeImage'))
+  async markInProgress(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.bookingsService.markInProgress(user.sub, id);
+    const beforeImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
+    return this.bookingsService.markInProgress(user.sub, id, beforeImage);
   }
-  @Roles('GROOMER') @Patch(':id/request-completion') requestCompletion(
+
+  @Roles('GROOMER')
+  @Patch(':id/request-completion')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        note: { type: 'string' },
+        afterImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('afterImage'))
+  async requestCompletion(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: CompletionRequestDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.bookingsService.requestCompletion(user.sub, id, dto);
+    const afterImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
+    return this.bookingsService.requestCompletion(user.sub, id, dto, afterImage);
   }
   @Roles('BUYER') @Patch(':id/approve-completion') approveCompletion(
     @CurrentUser() user: AuthUser,

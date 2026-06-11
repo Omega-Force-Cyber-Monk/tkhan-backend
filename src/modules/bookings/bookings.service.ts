@@ -439,7 +439,11 @@ export class BookingsService {
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
-  async markInProgress(groomerId: string, id: string) {
+  async markInProgress(
+    groomerId: string,
+    id: string,
+    beforeImage?: string,
+  ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
     });
@@ -453,7 +457,11 @@ export class BookingsService {
     }
     const updated = await this.prisma.booking.update({
       where: { id },
-      data: { status: 'IN_PROGRESS', inProgressAt: new Date() },
+      data: {
+        status: 'IN_PROGRESS',
+        inProgressAt: new Date(),
+        ...(beforeImage && { beforeImage }),
+      },
     });
     await this.notifications.create(
       updated.buyerId,
@@ -469,6 +477,7 @@ export class BookingsService {
     groomerId: string,
     id: string,
     dto: CompletionRequestDto,
+    afterImage?: string,
   ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
@@ -485,6 +494,7 @@ export class BookingsService {
         status: 'COMPLETION_REQUESTED',
         completionRequestedAt: new Date(),
         completionNote: dto.note,
+        ...(afterImage && { afterImage }),
       },
     });
     await this.notifications.create(
