@@ -149,7 +149,15 @@ export class PayoutsService {
     weekStart.setDate(now.getDate() - 7);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [balance, week, month, recentEarnings, recentWithdrawalRequests] =
+    const [
+      balance,
+      week,
+      month,
+      weekApprovedPayout,
+      monthApprovedPayout,
+      recentEarnings,
+      recentWithdrawalRequests,
+    ] =
       await Promise.all([
         this.getBalanceSummary(groomer.id),
         this.prisma.payout.aggregate({
@@ -165,6 +173,22 @@ export class PayoutsService {
             createdAt: { gte: monthStart },
           },
           _sum: { amount: true },
+        }),
+        this.prisma.withdrawalRequest.aggregate({
+          where: {
+            groomerId: groomer.id,
+            status: { in: ['APPROVED', 'PAID'] as any },
+            reviewedAt: { gte: weekStart },
+          },
+          _sum: { amountRequested: true },
+        }),
+        this.prisma.withdrawalRequest.aggregate({
+          where: {
+            groomerId: groomer.id,
+            status: { in: ['APPROVED', 'PAID'] as any },
+            reviewedAt: { gte: monthStart },
+          },
+          _sum: { amountRequested: true },
         }),
         this.prisma.payout.findMany({
           where: { groomerId: groomer.id },
@@ -199,6 +223,8 @@ export class PayoutsService {
       ...balance,
       thisWeekIncome: week._sum.amount ?? 0,
       thisMonthIncome: month._sum.amount ?? 0,
+      thisWeekApprovedPayout: weekApprovedPayout._sum.amountRequested ?? 0,
+      thisMonthApprovedPayout: monthApprovedPayout._sum.amountRequested ?? 0,
       recentEarnings,
       recentWithdrawalRequests,
     };

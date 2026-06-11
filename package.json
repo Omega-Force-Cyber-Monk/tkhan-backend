@@ -8,6 +8,7 @@
   "scripts": {
     "prebuild": "npm run prisma:generate",
     "build": "nest build",
+    "postbuild": "node -e \"require('fs').writeFileSync('dist/main.js', \\\"require('./src/main.js')\\\\n\\\")\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node dist/src/main",
     "start:dev": "nest start --watch",
