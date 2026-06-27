@@ -12,6 +12,7 @@ import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { sanitizeUser } from '../../common/utils/sanitize-user';
 import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -30,6 +31,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async registerBuyer(dto: RegisterBuyerDto) {
@@ -120,6 +122,16 @@ export class AuthService {
       },
       include: { groomerProfile: true },
     });
+    await this.notifications.createForAdmins(
+      'ADMIN_ACTION',
+      'New groomer registration',
+      `${user.fullName} submitted a groomer registration for approval.`,
+      {
+        targetScreen: 'groomer_approval',
+        groomerId: user.groomerProfile?.id,
+        userId: user.id,
+      },
+    );
     return {
       user: sanitizeUser(user),
       message: 'Groomer registration submitted for admin approval.',

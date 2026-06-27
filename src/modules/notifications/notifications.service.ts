@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -8,6 +8,8 @@ import { NotificationsGateway } from './notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: NotificationsGateway,
@@ -64,6 +66,35 @@ export class NotificationsService {
     return notification;
   }
 
+  async createForAdmins(
+    type: any,
+    title: string,
+    body?: string,
+    data?: any,
+  ) {
+    try {
+      const admins = await this.prisma.user.findMany({
+        where: {
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          isBlocked: false,
+        },
+        select: { id: true },
+      });
+
+      return await Promise.all(
+        admins.map((admin) => this.create(admin.id, type, title, body, data)),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to create admin notification: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return [];
+    }
+  }
+
   async registerPushToken(userId: string, dto: RegisterPushTokenDto) {
     return this.prisma.pushDeviceToken.upsert({
       where: { token: dto.token },
@@ -95,7 +126,6 @@ export class NotificationsService {
       }),
       this.prisma.notification.count({ where }),
     ]);
-    if (total === 0) return this.dummyList(userId);
     return paginated(items, total, dto.page, dto.limit);
   }
   async markRead(userId: string, id: string) {

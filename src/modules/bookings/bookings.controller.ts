@@ -303,11 +303,13 @@ export class BookingsController {
     const afterImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
     return this.bookingsService.requestCompletion(user.sub, id, dto, afterImage);
   }
-  @Roles('BUYER') @Patch(':id/approve-completion') approveCompletion(
+  @Roles('BUYER', 'ADMIN')
+  @Patch(':id/approve-completion')
+  approveCompletion(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
   ) {
-    return this.bookingsService.approveCompletion(user.sub, id);
+    return this.bookingsService.approveCompletion(user.sub, user.role, id);
   }
   @Roles('GROOMER')
   @Patch(':id/images')

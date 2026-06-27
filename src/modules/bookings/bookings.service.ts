@@ -436,6 +436,17 @@ export class BookingsService {
       dto.reason,
       { targetScreen: 'booking_details', bookingId: id },
     );
+    await this.notifications.createForAdmins(
+      'BOOKING_REJECTED',
+      'Booking rejected',
+      dto.reason ?? 'A groomer rejected a booking.',
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
+    );
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
@@ -504,14 +515,25 @@ export class BookingsService {
       'Please approve completion if the service is done.',
       { targetScreen: 'booking_details', bookingId: id },
     );
+    await this.notifications.createForAdmins(
+      'COMPLETION_REQUESTED',
+      'Completion requested',
+      'A groomer requested booking completion approval.',
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
+    );
     return updated;
   }
 
-  async approveCompletion(buyerId: string, id: string) {
+  async approveCompletion(userId: string, role: string, id: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
     });
-    if (booking.buyerId !== buyerId)
+    if (role !== 'ADMIN' && booking.buyerId !== userId)
       throw new ForbiddenException('Booking belongs to another buyer');
     if (booking.status !== 'COMPLETION_REQUESTED')
       throw new BadRequestException(
@@ -534,10 +556,27 @@ export class BookingsService {
       updated.groomerId,
       'BOOKING_COMPLETED',
       'Booking completed',
-      'The buyer approved completion.',
+      role === 'ADMIN'
+        ? 'The admin approved completion.'
+        : 'The buyer approved completion.',
       { targetScreen: 'booking_details', bookingId: id },
     );
     await this.payouts.releaseForBooking(id);
+    await this.notifications.createForAdmins(
+      'BOOKING_COMPLETED',
+      'Booking completed',
+      role === 'ADMIN'
+        ? 'An admin approved booking completion.'
+        : 'A buyer approved booking completion.',
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        approvedByRole: role,
+        approvedById: userId,
+      },
+    );
     return updated;
   }
 

@@ -288,6 +288,17 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'A buyer requested a booking.',
       { targetScreen: 'booking_details', bookingId: booking.id },
     );
+    await this.notifications.createForAdmins(
+      'BOOKING_CREATED',
+      'New paid booking',
+      'A buyer completed payment for a new booking request.',
+      {
+        targetScreen: 'booking_details',
+        bookingId: booking.id,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
+    );
     return payment;
   }
 
@@ -342,6 +353,18 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'Payment refunded',
       'A full refund was issued.',
       { targetScreen: 'booking_details', bookingId },
+    );
+    await this.notifications.createForAdmins(
+      'PAYMENT_REFUND',
+      'Payment refunded',
+      reason ?? 'A full refund was issued.',
+      {
+        targetScreen: 'booking_details',
+        bookingId,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+        refundId: refund?.id,
+      },
     );
     return { refundId: refund?.id, booking };
   }

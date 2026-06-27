@@ -522,7 +522,7 @@ export class PayoutsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const request = await this.prisma.$transaction(async (tx) => {
       const bankAccount = await tx.groomerBankAccount.findFirst({
         where: {
           id: dto.bankAccountId,
@@ -562,6 +562,20 @@ export class PayoutsService {
 
       return request;
     });
+    await this.notifications.createForAdmins(
+      'ADMIN_ACTION',
+      'New withdrawal request',
+      'A groomer submitted a withdrawal request.',
+      {
+        targetScreen: 'withdrawal_details',
+        withdrawalRequestId: request.id,
+        groomerId: request.groomerId,
+        groomerUserId: request.groomer.userId,
+        amountRequested: request.amountRequested.toString(),
+        currency: request.currency,
+      },
+    );
+    return request;
   }
 
   async cancelWithdrawalRequest(userId: string, id: string) {
@@ -580,7 +594,7 @@ export class PayoutsService {
         'Only requested withdrawals can be cancelled',
       );
     }
-    return this.prisma.withdrawalRequest.update({
+    const updated = await this.prisma.withdrawalRequest.update({
       where: { id },
       data: {
         status: 'CANCELLED',
@@ -588,6 +602,18 @@ export class PayoutsService {
       },
       include: withdrawalRequestInclude,
     });
+    await this.notifications.createForAdmins(
+      'ADMIN_ACTION',
+      'Withdrawal request cancelled',
+      'A groomer cancelled a withdrawal request.',
+      {
+        targetScreen: 'withdrawal_details',
+        withdrawalRequestId: updated.id,
+        groomerId: updated.groomerId,
+        groomerUserId: updated.groomer.userId,
+      },
+    );
+    return updated;
   }
 
   async listWithdrawalRequests(dto: WithdrawalRequestQueryDto) {

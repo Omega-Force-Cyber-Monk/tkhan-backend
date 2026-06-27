@@ -80,7 +80,9 @@ export class BuyerService {
           { about: { contains: search, mode: 'insensitive' } },
           { user: { fullName: { contains: search, mode: 'insensitive' } } },
           { user: { email: { contains: search, mode: 'insensitive' } } },
-          { user: { streetAddress: { contains: search, mode: 'insensitive' } } },
+          {
+            user: { streetAddress: { contains: search, mode: 'insensitive' } },
+          },
           { user: { city: { contains: search, mode: 'insensitive' } } },
           { user: { province: { contains: search, mode: 'insensitive' } } },
           { user: { postalCode: { contains: search, mode: 'insensitive' } } },
@@ -135,10 +137,7 @@ export class BuyerService {
       items = await this.prisma.groomerProfile.findMany({
         where,
         ...paginate(page, limit),
-        orderBy: [
-          { availableForBookings: 'desc' },
-          { [sortBy]: sortOrder },
-        ],
+        orderBy: [{ availableForBookings: 'desc' }, { [sortBy]: sortOrder }],
         include: {
           user: true,
           services: { where: { active: true }, include: { category: true } },

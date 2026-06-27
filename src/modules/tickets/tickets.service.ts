@@ -38,7 +38,7 @@ export class TicketsService {
         validRelatedBookingId = relatedBookingId;
       }
     }
-    return this.prisma.supportTicket.create({
+    const ticket = await this.prisma.supportTicket.create({
       data: {
         requesterId: userId,
         subject: dto.subject,
@@ -54,6 +54,18 @@ export class TicketsService {
       },
       include: { messages: true },
     });
+    await this.notifications.createForAdmins(
+      'ADMIN_ACTION',
+      'New support ticket',
+      dto.subject,
+      {
+        targetScreen: 'ticket_details',
+        ticketId: ticket.id,
+        requesterId: userId,
+        relatedBookingId: validRelatedBookingId,
+      },
+    );
+    return ticket;
   }
   async list(userId: string, role: string) {
     const tickets = await this.prisma.supportTicket.findMany({
@@ -180,6 +192,18 @@ export class TicketsService {
       dto.message,
       { targetScreen: 'ticket_details', ticketId },
     );
+    if (role !== 'ADMIN') {
+      await this.notifications.createForAdmins(
+        'TICKET_REPLY',
+        'Ticket reply from user',
+        dto.message,
+        {
+          targetScreen: 'ticket_details',
+          ticketId,
+          requesterId: userId,
+        },
+      );
+    }
     return message;
   }
   resolve(ticketId: string) {
