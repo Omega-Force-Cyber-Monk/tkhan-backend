@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
@@ -95,19 +96,35 @@ export class BookingsService {
 
   async create(buyerId: string, dto: CreateBookingDto) {
     return this.prisma.$transaction(async (tx) => {
-      const pet = await tx.pet.findUniqueOrThrow({ where: { id: dto.petId } });
-      const groomer = await tx.groomerProfile.findUniqueOrThrow({
+      const pet = await tx.pet.findUnique({ where: { id: dto.petId } });
+      if (!pet) {
+        throw new NotFoundException('Pet not found');
+      }
+
+      const groomer = await tx.groomerProfile.findUnique({
         where: { id: dto.groomerId },
         include: { user: true },
       });
-      const service = await tx.service.findUniqueOrThrow({
+      if (!groomer) {
+        throw new NotFoundException('Groomer not found');
+      }
+
+      const service = await tx.service.findUnique({
         where: { id: dto.serviceId },
         include: { category: true, addonMappings: true },
       });
-      const slot = await tx.groomerAvailabilitySlot.findUniqueOrThrow({
+      if (!service) {
+        throw new NotFoundException('Service not found');
+      }
+
+      const slot = await tx.groomerAvailabilitySlot.findUnique({
         where: { id: dto.availabilitySlotId },
         include: { availability: true },
       });
+      if (!slot) {
+        throw new NotFoundException('Availability slot not found');
+      }
+
       if (pet.buyerId !== buyerId)
         throw new ForbiddenException('Pet belongs to another buyer');
       if (
