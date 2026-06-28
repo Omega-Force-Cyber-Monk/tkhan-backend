@@ -58,6 +58,7 @@ export class AuthController {
         'businessName',
         'serviceArea',
         'businessAddress',
+        'gstHstRegistrationNumber',
         'idFrontImage',
         'idBackImage',
       ],
@@ -78,6 +79,7 @@ export class AuthController {
         businessName: { type: 'string' },
         serviceArea: { type: 'string' },
         businessAddress: { type: 'string' },
+        gstHstRegistrationNumber: { type: 'string' },
         certifications: {
           type: 'array',
           items: {

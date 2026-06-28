@@ -145,6 +145,7 @@ const bookingExample = {
       businessName: 'Sarah Pet Spa',
       serviceArea: 'Austin',
       businessAddress: '44 Grooming Lane',
+      gstHstRegistrationNumber: '123456789RT0001',
       experienceYears: 5,
       shortBio: 'Gentle grooming for dogs and cats.',
       about: 'Certified groomer with in-home grooming experience.',

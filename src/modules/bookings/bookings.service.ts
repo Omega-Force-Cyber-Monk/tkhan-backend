@@ -42,6 +42,7 @@ const bookingGroomerSelect = {
       businessName: true,
       serviceArea: true,
       businessAddress: true,
+      gstHstRegistrationNumber: true,
       experienceYears: true,
       shortBio: true,
       about: true,

@@ -111,6 +111,7 @@ export class AuthService {
             businessName: dto.businessName,
             serviceArea: dto.serviceArea,
             businessAddress: dto.businessAddress,
+            gstHstRegistrationNumber: dto.gstHstRegistrationNumber,
             idFrontImage: dto.idFrontImage,
             idBackImage: dto.idBackImage,
             selfieWithId: dto.selfieWithId,
