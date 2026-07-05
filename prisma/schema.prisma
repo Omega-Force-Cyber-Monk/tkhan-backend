@@ -180,7 +180,7 @@ model GroomerProfile {
   businessName           String
   serviceArea            String
   businessAddress        String
-  gstHstRegistrationNumber String               @default("")
+  gstHstRegistrationNumber String?
   idFrontImage           String
   idBackImage            String
   selfieWithId           String?

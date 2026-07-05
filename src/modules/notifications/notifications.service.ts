@@ -95,6 +95,26 @@ export class NotificationsService {
     }
   }
 
+  emitBookingUpdated(
+    userIds: string[],
+    payload: {
+      bookingId: string;
+      status: string;
+      updatedAt?: Date;
+      buyerId?: string;
+      groomerId?: string;
+      approvedByRole?: string;
+      approvedById?: string;
+      refundId?: string | null;
+      reason?: string;
+    },
+  ) {
+    this.gateway.emitToUsers(userIds, 'booking.updated', {
+      ...payload,
+      updatedAt: payload.updatedAt ?? new Date(),
+    });
+  }
+
   async registerPushToken(userId: string, dto: RegisterPushTokenDto) {
     return this.prisma.pushDeviceToken.upsert({
       where: { token: dto.token },

@@ -51,10 +51,11 @@ export class RegisterGroomerDto extends RegisterBuyerDto {
   @ApiProperty({ example: '120 Market Street, Austin, TX' })
   @IsString()
   businessAddress: string;
-  @ApiProperty({ example: '123456789RT0001' })
+  @ApiPropertyOptional({ example: '123456789RT0001' })
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  gstHstRegistrationNumber: string;
+  gstHstRegistrationNumber?: string;
   @ApiPropertyOptional({ type: 'string', format: 'binary' })
   @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()

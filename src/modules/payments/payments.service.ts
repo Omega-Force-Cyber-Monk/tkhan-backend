@@ -288,6 +288,16 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'A buyer requested a booking.',
       { targetScreen: 'booking_details', bookingId: booking.id },
     );
+    this.notifications.emitBookingUpdated(
+      [booking.buyerId, booking.groomerId],
+      {
+        bookingId: booking.id,
+        status: booking.status,
+        updatedAt: booking.updatedAt,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
+    );
     await this.notifications.createForAdmins(
       'BOOKING_CREATED',
       'New paid booking',
@@ -354,6 +364,20 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       'A full refund was issued.',
       { targetScreen: 'booking_details', bookingId },
     );
+    if (bookingStatus === 'REFUNDED') {
+      this.notifications.emitBookingUpdated(
+        [booking.buyerId, booking.groomerId],
+        {
+          bookingId,
+          status: booking.status,
+          updatedAt: booking.updatedAt,
+          buyerId: booking.buyerId,
+          groomerId: booking.groomerId,
+          refundId: refund?.id ?? null,
+          reason,
+        },
+      );
+    }
     await this.notifications.createForAdmins(
       'PAYMENT_REFUND',
       'Payment refunded',

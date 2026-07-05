@@ -58,7 +58,6 @@ export class AuthController {
         'businessName',
         'serviceArea',
         'businessAddress',
-        'gstHstRegistrationNumber',
         'idFrontImage',
         'idBackImage',
       ],

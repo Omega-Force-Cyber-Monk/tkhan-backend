@@ -423,6 +423,16 @@ export class BookingsService {
       'Your groomer accepted the booking.',
       { targetScreen: 'booking_details', bookingId: id },
     );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
+    );
     return updated;
   }
 
@@ -434,7 +444,7 @@ export class BookingsService {
       throw new ForbiddenException('Booking belongs to another groomer');
     if (!['PENDING', 'REQUESTED'].includes(booking.status))
       throw new BadRequestException('Only pending bookings can be rejected');
-    await this.prisma.booking.update({
+    const updated = await this.prisma.booking.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -453,6 +463,17 @@ export class BookingsService {
       'Booking rejected',
       dto.reason,
       { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [booking.buyerId, booking.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        reason: dto.reason,
+      },
     );
     await this.notifications.createForAdmins(
       'BOOKING_REJECTED',
@@ -499,6 +520,16 @@ export class BookingsService {
       'Your groomer has started working on the booking.',
       { targetScreen: 'booking_details', bookingId: id },
     );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
+    );
     return updated;
   }
 
@@ -532,6 +563,16 @@ export class BookingsService {
       'Completion requested',
       'Please approve completion if the service is done.',
       { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
     );
     await this.notifications.createForAdmins(
       'COMPLETION_REQUESTED',
@@ -578,6 +619,18 @@ export class BookingsService {
         ? 'The admin approved completion.'
         : 'The buyer approved completion.',
       { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        approvedByRole: role,
+        approvedById: userId,
+      },
     );
     await this.payouts.releaseForBooking(id);
     await this.notifications.createForAdmins(

@@ -111,7 +111,8 @@ export class AuthService {
             businessName: dto.businessName,
             serviceArea: dto.serviceArea,
             businessAddress: dto.businessAddress,
-            gstHstRegistrationNumber: dto.gstHstRegistrationNumber,
+            gstHstRegistrationNumber:
+              dto.gstHstRegistrationNumber?.trim() || undefined,
             idFrontImage: dto.idFrontImage,
             idBackImage: dto.idBackImage,
             selfieWithId: dto.selfieWithId,
