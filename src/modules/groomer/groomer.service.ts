@@ -57,6 +57,7 @@ export class GroomerService {
       completedBookings,
       cancelledBookings,
       averageRating: ratingAgg._avg.rating ?? 0,
+      connectStatus: await this.payouts.connectStatus(userId),
     };
   }
   async earnings(userId: string) {
@@ -77,6 +78,7 @@ export class GroomerService {
     if (groomer.approvalStatus !== 'APPROVED') {
       throw new BadRequestException('Groomer approval required');
     }
+    this.payouts.assertGroomerPayoutSetupComplete(groomer);
     if (groomer._count.services === 0) {
       throw new BadRequestException(
         'Add at least one active service before enabling availability',

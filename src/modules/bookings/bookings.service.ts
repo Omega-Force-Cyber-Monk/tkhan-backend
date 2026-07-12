@@ -50,6 +50,10 @@ const bookingGroomerSelect = {
       serviceModes: true,
       availableForBookings: true,
       approvalStatus: true,
+      stripeConnectedAccountId: true,
+      stripeOnboardingCompleted: true,
+      stripeTransfersEnabled: true,
+      stripePayoutsEnabled: true,
     },
   },
 };
@@ -72,18 +76,6 @@ const bookingAvailabilitySlotInclude = {
 
 const bookingPayoutInclude = {
   orderBy: { createdAt: 'desc' as const },
-  include: {
-    withdrawalItems: {
-      include: {
-        withdrawalRequest: {
-          select: {
-            status: true,
-            paidAt: true,
-          },
-        },
-      },
-    },
-  },
 };
 
 @Injectable()
@@ -99,7 +91,7 @@ export class BookingsService {
     return this.prisma.$transaction(async (tx) => {
       const pet = await tx.pet.findUnique({ where: { id: dto.petId } });
       if (!pet) {
-        throw new NotFoundException('Pet not found');
+        throw new NotFoundException('Selected pet was not found');
       }
 
       const groomer = await tx.groomerProfile.findUnique({
@@ -107,7 +99,7 @@ export class BookingsService {
         include: { user: true },
       });
       if (!groomer) {
-        throw new NotFoundException('Groomer not found');
+        throw new NotFoundException('Selected groomer was not found');
       }
 
       const service = await tx.service.findUnique({
@@ -115,7 +107,7 @@ export class BookingsService {
         include: { category: true, addonMappings: true },
       });
       if (!service) {
-        throw new NotFoundException('Service not found');
+        throw new NotFoundException('Selected service was not found');
       }
 
       const slot = await tx.groomerAvailabilitySlot.findUnique({
@@ -123,25 +115,55 @@ export class BookingsService {
         include: { availability: true },
       });
       if (!slot) {
-        throw new NotFoundException('Availability slot not found');
+        throw new NotFoundException('Selected availability slot was not found');
       }
 
-      if (pet.buyerId !== buyerId)
-        throw new ForbiddenException('Pet belongs to another buyer');
-      if (
-        groomer.approvalStatus !== 'APPROVED' ||
-        !groomer.availableForBookings ||
-        groomer.user.isBlocked
-      )
-        throw new BadRequestException('Groomer is not available for bookings');
-      if (service.groomerId !== groomer.id || !service.active)
-        throw new BadRequestException('Invalid service for groomer');
-      if (
-        slot.isBooked ||
-        !slot.availability.isAvailable ||
-        slot.availability.groomerId !== groomer.id
-      )
-        throw new BadRequestException('Selected slot is not available');
+      if (pet.buyerId !== buyerId) {
+        throw new ForbiddenException(
+          'You can only create a booking with a pet from your own account',
+        );
+      }
+      if (groomer.user.isBlocked) {
+        throw new BadRequestException(
+          'This groomer account is blocked and cannot receive bookings',
+        );
+      }
+      if (groomer.approvalStatus !== 'APPROVED') {
+        throw new BadRequestException(
+          'This groomer is still waiting for admin approval',
+        );
+      }
+      if (!groomer.availableForBookings) {
+        throw new BadRequestException(
+          'This groomer has currently disabled booking availability',
+        );
+      }
+      this.payouts.assertGroomerPayoutSetupComplete(groomer);
+      if (service.groomerId !== groomer.id) {
+        throw new BadRequestException(
+          'Selected service does not belong to this groomer',
+        );
+      }
+      if (!service.active) {
+        throw new BadRequestException(
+          'Selected service is currently inactive',
+        );
+      }
+      if (slot.availability.groomerId !== groomer.id) {
+        throw new BadRequestException(
+          'Selected availability slot does not belong to this groomer',
+        );
+      }
+      if (!slot.availability.isAvailable) {
+        throw new BadRequestException(
+          'Selected availability date is currently unavailable',
+        );
+      }
+      if (slot.isBooked) {
+        throw new BadRequestException(
+          'Selected availability slot has already been booked',
+        );
+      }
       const addons = dto.addonIds?.length
         ? await tx.serviceAddon.findMany({
             where: {
@@ -152,8 +174,11 @@ export class BookingsService {
             },
           })
         : [];
-      if ((dto.addonIds?.length ?? 0) !== addons.length)
-        throw new BadRequestException('One or more add-ons are invalid');
+      if ((dto.addonIds?.length ?? 0) !== addons.length) {
+        throw new BadRequestException(
+          'One or more selected add-ons are invalid for this service',
+        );
+      }
       const pricing = await tx.platformSetting.findUnique({
         where: { id: 'platform' },
       });
@@ -334,6 +359,8 @@ export class BookingsService {
         payoutReservedAmount: payoutSummary.reservedAmount,
         payoutPaidAmount: payoutSummary.paidAmount,
         payoutAvailableAmount: payoutSummary.availableAmount,
+        payoutTransferredAt: payoutSummary.transferredAt,
+        payoutFailureReason: payoutSummary.failureReason,
       },
     };
   }
@@ -346,48 +373,23 @@ export class BookingsService {
         reservedAmount: 0,
         paidAmount: 0,
         availableAmount: 0,
+        transferredAt: null,
+        failureReason: null,
       };
     }
-
-    const paidItems = payout.withdrawalItems.filter(
-      (item: any) => item.withdrawalRequest.status === 'PAID',
-    );
-    const reservedItems = payout.withdrawalItems.filter((item: any) =>
-      ['REQUESTED', 'APPROVED'].includes(item.withdrawalRequest.status),
-    );
-    const paidAmount = paidItems.reduce(
-      (sum: number, item: any) => sum + Number(item.allocatedAmount),
-      0,
-    );
-    const reservedAmount = reservedItems.reduce(
-      (sum: number, item: any) => sum + Number(item.allocatedAmount),
-      0,
-    );
-    const availableAmount = Number(
-      (Number(payout.amount) - paidAmount - reservedAmount).toFixed(2),
-    );
-    const latestPaidAt = paidItems
-      .map((item: any) => item.withdrawalRequest.paidAt)
-      .filter(Boolean)
-      .sort(
-        (a: Date, b: Date) =>
-          new Date(a).getTime() - new Date(b).getTime(),
-      )
-      .at(-1);
-
-    let status = 'PENDING';
-    if (availableAmount <= 0 && paidAmount >= Number(payout.amount)) {
-      status = 'PAID';
-    } else if (reservedAmount > 0 || paidAmount > 0) {
-      status = 'PROCESSING';
-    }
+    const amount = Number(payout.amount);
+    const isTransferred = ['TRANSFERRED', 'PAID_OUT'].includes(payout.status);
+    const availableAmount = isTransferred ? 0 : amount;
+    const paidAmount = isTransferred ? amount : 0;
 
     return {
-      status,
-      paidOutAt: latestPaidAt ?? null,
-      reservedAmount,
+      status: payout.status,
+      paidOutAt: payout.payoutPaidOutAt ?? null,
+      reservedAmount: 0,
       paidAmount,
       availableAmount,
+      transferredAt: payout.transferredAt ?? null,
+      failureReason: payout.failureReason ?? null,
     };
   }
 

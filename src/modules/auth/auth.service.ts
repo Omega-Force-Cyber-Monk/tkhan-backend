@@ -149,12 +149,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     if (user.isBlocked) throw new ForbiddenException('Account is blocked');
     if (user.role === 'BUYER' && !user.emailVerified)
-      throw new ForbiddenException('Email verification required');
+      throw new ForbiddenException(
+        'Buyer email verification is required before login',
+      );
     if (
       user.role === 'GROOMER' &&
       user.groomerProfile?.approvalStatus !== 'APPROVED'
     )
-      throw new ForbiddenException('Groomer approval required before login');
+      throw new ForbiddenException(
+        'Admin approval is required before groomer login',
+      );
     if (user.status !== 'ACTIVE')
       throw new ForbiddenException('Account is not active');
     const tokens = await this.signTokens(user.id, user.email, user.role);
@@ -262,7 +266,9 @@ export class AuthService {
       where: { email: dto.email?.toLowerCase() || '' },
     });
     if (!user || user.role !== 'BUYER') {
-      throw new BadRequestException('Invalid email verification request');
+      throw new BadRequestException(
+        'Invalid buyer email verification request',
+      );
     }
     if (!user.emailVerificationToken) {
       throw new BadRequestException('Email already verified');

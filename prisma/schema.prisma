@@ -57,6 +57,14 @@ enum PaymentStatus {
   COMPLETED
 }
 
+enum PayoutStatus {
+  PENDING
+  TRANSFERRED
+  PAID_OUT
+  FAILED
+  REVERSED
+}
+
 enum ReviewTargetType {
   GROOMER
   BUYER
@@ -188,6 +196,14 @@ model GroomerProfile {
   about                  String?
   certifications         Json                   @default("[]")
   serviceModes           String[]               @default([])
+  stripeConnectedAccountId String?              @unique
+  stripeOnboardingCompleted Boolean             @default(false)
+  stripeTransfersEnabled Boolean                @default(false)
+  stripePayoutsEnabled  Boolean                 @default(false)
+  stripeOnboardingStartedAt DateTime?
+  stripeOnboardingCompletedAt DateTime?
+  stripeConnectCountry   String?
+  stripeConnectEmail     String?
   availableForBookings   Boolean                @default(false)
   approvalStatus         GroomerApprovalStatus  @default(PENDING)
   rejectionReason        String?
@@ -418,6 +434,7 @@ model Payment {
   status                PaymentStatus @default(PAYMENT_PENDING)
   stripeCheckoutSessionId String?     @unique
   stripePaymentIntentId String?       @unique
+  stripeChargeId        String?       @unique
   stripeRefundId        String?
   failureReason         String?
   paidAt                DateTime?
@@ -437,6 +454,11 @@ model Payout {
   amount           Decimal                 @db.Decimal(10, 2)
   platformFee      Decimal                 @db.Decimal(10, 2)
   currency         String                  @default("usd")
+  status           PayoutStatus            @default(PENDING)
+  stripeTransferId String?                 @unique
+  transferredAt    DateTime?
+  payoutPaidOutAt  DateTime?
+  failureReason    String?
   withdrawalItems  WithdrawalRequestItem[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt

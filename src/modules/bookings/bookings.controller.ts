@@ -153,6 +153,10 @@ const bookingExample = {
       serviceModes: ['IN_HOME'],
       availableForBookings: true,
       approvalStatus: 'APPROVED',
+      stripeConnectedAccountId: 'acct_1234567890',
+      stripeOnboardingCompleted: true,
+      stripeTransfersEnabled: true,
+      stripePayoutsEnabled: true,
     },
   },
 };
@@ -181,6 +185,8 @@ const bookingDetailExample = {
     payoutReservedAmount: '0.00',
     payoutPaidAmount: '0.00',
     payoutAvailableAmount: '67.50',
+    payoutTransferredAt: null,
+    payoutFailureReason: null,
   },
 };
 
