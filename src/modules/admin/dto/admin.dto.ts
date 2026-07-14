@@ -5,9 +5,11 @@ import {
   IsEmail,
   IsEnum,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
@@ -77,12 +79,13 @@ export class AdminBlockUserDto {
 
 export class UpdatePlatformPricingDto {
   @ApiProperty({
-    example: 3,
+    example: 10,
     description:
-      'Flat service charge added to every booking total at payment time.',
+      'Platform charge percentage added on top of the groomer service total. Example: 10 means buyer pays 10% extra.',
   })
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsInt()
   @Min(0)
+  @Max(100)
   serviceChargeAmount!: number;
 }

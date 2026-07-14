@@ -316,7 +316,7 @@ export class AdminService {
       data: {
         adminId,
         action: 'PLATFORM_PRICING_UPDATED',
-        note: `Service charge updated to ${serviceChargeAmount.toFixed(2)}`,
+        note: `Platform charge percentage updated to ${serviceChargeAmount}%`,
       },
     });
     return pricing;

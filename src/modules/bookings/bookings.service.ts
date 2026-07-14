@@ -185,9 +185,12 @@ export class BookingsService {
       const subtotal =
         Number(service.price) +
         addons.reduce((sum, addon) => sum + Number(addon.price), 0);
-      const serviceCharge = Number(pricing?.serviceChargeAmount ?? 0);
-      const platformFee = Number((subtotal * 0.1).toFixed(2));
-      const groomerEarning = Number((subtotal - platformFee).toFixed(2));
+      const serviceChargePercent = Number(pricing?.serviceChargeAmount ?? 0);
+      const serviceCharge = Number(
+        ((subtotal * serviceChargePercent) / 100).toFixed(2),
+      );
+      const platformFee = serviceCharge;
+      const groomerEarning = Number(subtotal.toFixed(2));
       const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
       const booking = await tx.booking.create({
         data: {

@@ -201,9 +201,9 @@ What it creates:
 
 Pricing logic here:
 
-- `serviceChargeAmount` comes from platform settings
-- `platformFeeAmount` is `subtotal * 0.1`
-- `groomerEarningAmount` is `subtotal - platformFee`
+- `serviceChargeAmount` is calculated from the platform percentage in platform settings
+- `platformFeeAmount` matches the extra percentage charge paid by the buyer
+- `groomerEarningAmount` stays equal to the groomer subtotal
 - `totalAmount` is `subtotal + serviceCharge`
 
 ### `accept(groomerId, id)`
