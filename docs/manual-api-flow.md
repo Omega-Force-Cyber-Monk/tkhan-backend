@@ -17,6 +17,14 @@ Make sure these are working first:
 - Cloudinary is configured for multipart image uploads
 - Stripe test keys are configured
 - Stripe webhook points to `POST /api/v1/payments/stripe/webhook`
+- Stripe Connect payout schedule is configured if you do not want the default daily schedule
+
+Stripe Connect payout schedule env:
+
+- `STRIPE_CONNECT_PAYOUT_INTERVAL`: `daily`, `weekly`, `monthly`, or `manual`
+- `STRIPE_CONNECT_PAYOUT_DELAY_DAYS`: `minimum` or a number from `0` to `31`
+- `STRIPE_CONNECT_PAYOUT_WEEKLY_DAY`: required only for weekly payout schedule
+- `STRIPE_CONNECT_PAYOUT_MONTHLY_DAY`: required only for monthly payout schedule
 
 Important webhook note:
 
@@ -257,6 +265,7 @@ Expected:
 - response returns `url`
 - open that URL in browser
 - complete Stripe Express onboarding
+- backend configures the connected account payout schedule when the account is created or reused
 
 ### 4.3 Check Connect status
 
@@ -610,6 +619,8 @@ Expected:
 - booking status becomes `COMPLETED`
 - latest successful payment becomes `COMPLETED`
 - payout release is triggered automatically
+- groomer earning is transferred to the groomer connected Stripe account
+- Stripe sends the connected account balance to the groomer bank account using the configured payout schedule
 
 ## 10. Check Payout Result
 

@@ -15,6 +15,7 @@ This flow covers:
 - Stripe payment intent + payment confirmation
 - booking lifecycle updates
 - automatic payout transfer after completion
+- Stripe Connect payout schedule configuration
 - notifications and realtime booking updates
 
 ## High-Level Flow
@@ -374,6 +375,8 @@ Important functions:
 - `releasePendingPayoutsForGroomer(groomerId)`
 - `assertGroomerPayoutSetupComplete(groomer)`
 - `ensureConnectedAccount(groomer)`
+- `configureConnectedAccountPayoutSchedule(accountId)`
+- `buildConnectedAccountPayoutSettings()`
 
 ### `createOnboardingLink(userId)`
 
@@ -389,13 +392,26 @@ Flow:
 
 Flow:
 
-- if account already exists, reuse it
+- if account already exists, applies the configured payout schedule and reuses it
 - otherwise creates Stripe `express` connected account
+- applies payout schedule settings during account creation
 - stores:
 - `stripeConnectedAccountId`
 - `stripeConnectCountry`
 - `stripeConnectEmail`
 - `stripeOnboardingStartedAt`
+
+Payout schedule env:
+
+- `STRIPE_CONNECT_PAYOUT_INTERVAL`: `daily`, `weekly`, `monthly`, or `manual`
+- `STRIPE_CONNECT_PAYOUT_DELAY_DAYS`: `minimum` or a number from `0` to `31`
+- `STRIPE_CONNECT_PAYOUT_WEEKLY_DAY`: used when interval is `weekly`
+- `STRIPE_CONNECT_PAYOUT_MONTHLY_DAY`: used when interval is `monthly`
+
+Important distinction:
+
+- `releaseForBooking(...)` transfers groomer earning from the platform Stripe account to the groomer connected Stripe account
+- the connected account bank payout then follows the Stripe payout schedule
 
 ### `handleConnectedAccountUpdated(account)`
 

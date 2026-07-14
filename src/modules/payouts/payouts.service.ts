@@ -53,6 +53,14 @@ const payoutDetailInclude = {
   },
 } as const;
 
+type StripePayoutInterval = 'daily' | 'weekly' | 'monthly' | 'manual';
+type StripeWeeklyPayoutDay =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday';
+
 @Injectable()
 export class PayoutsService {
   private readonly logger = new Logger(PayoutsService.name);
@@ -411,6 +419,9 @@ export class PayoutsService {
 
     let link: any;
     try {
+      await this.configureConnectedAccountPayoutSchedule(
+        groomer.stripeConnectedAccountId,
+      );
       link = await this.stripe.accounts.createLoginLink(
         groomer.stripeConnectedAccountId,
       );
@@ -518,6 +529,9 @@ export class PayoutsService {
 
   private async ensureConnectedAccount(groomer: any) {
     if (groomer.stripeConnectedAccountId) {
+      await this.configureConnectedAccountPayoutSchedule(
+        groomer.stripeConnectedAccountId,
+      );
       return groomer.stripeConnectedAccountId;
     }
 
@@ -531,6 +545,7 @@ export class PayoutsService {
             requested: true,
           },
         },
+        ...this.buildConnectedAccountPayoutSettings(),
         metadata: {
           groomerProfileId: groomer.id,
           userId: groomer.userId,
@@ -551,6 +566,113 @@ export class PayoutsService {
     });
 
     return account.id;
+  }
+
+  private async configureConnectedAccountPayoutSchedule(accountId: string) {
+    try {
+      await this.stripe.accounts.update(
+        accountId,
+        this.buildConnectedAccountPayoutSettings(),
+      );
+    } catch (error) {
+      throw this.wrapStripeError('configure Stripe payout schedule', error);
+    }
+  }
+
+  private buildConnectedAccountPayoutSettings() {
+    const interval = this.getPayoutInterval();
+    const schedule: Record<string, unknown> = { interval };
+
+    const delayDays = this.getPayoutDelayDays();
+    if (interval !== 'manual' && delayDays !== undefined) {
+      schedule.delay_days = delayDays;
+    }
+
+    if (interval === 'weekly') {
+      schedule.weekly_payout_days = [this.getWeeklyPayoutDay()];
+    }
+
+    if (interval === 'monthly') {
+      schedule.monthly_payout_days = [this.getMonthlyPayoutDay()];
+    }
+
+    return {
+      settings: {
+        payouts: {
+          schedule,
+        },
+      },
+    };
+  }
+
+  private getPayoutInterval(): StripePayoutInterval {
+    const interval = (
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_INTERVAL') || 'daily'
+    )
+      .trim()
+      .toLowerCase();
+    const allowed: StripePayoutInterval[] = [
+      'daily',
+      'weekly',
+      'monthly',
+      'manual',
+    ];
+    if (!allowed.includes(interval as StripePayoutInterval)) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_INTERVAL must be one of: daily, weekly, monthly, manual',
+      );
+    }
+    return interval as StripePayoutInterval;
+  }
+
+  private getPayoutDelayDays() {
+    const raw = this.config
+      .get<string>('STRIPE_CONNECT_PAYOUT_DELAY_DAYS')
+      ?.trim()
+      .toLowerCase();
+    if (!raw) return 'minimum';
+    if (raw === 'minimum') return raw;
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 31) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_DELAY_DAYS must be minimum or a number from 0 to 31',
+      );
+    }
+    return value;
+  }
+
+  private getWeeklyPayoutDay(): StripeWeeklyPayoutDay {
+    const day = (
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_WEEKLY_DAY') || 'friday'
+    )
+      .trim()
+      .toLowerCase();
+    const allowed: StripeWeeklyPayoutDay[] = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+    ];
+    if (!allowed.includes(day as StripeWeeklyPayoutDay)) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_WEEKLY_DAY must be one of: monday, tuesday, wednesday, thursday, friday',
+      );
+    }
+    return day as StripeWeeklyPayoutDay;
+  }
+
+  private getMonthlyPayoutDay() {
+    const raw =
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_MONTHLY_DAY') || '1';
+    const day = Number(raw);
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_MONTHLY_DAY must be a number from 1 to 31',
+      );
+    }
+    return day;
   }
 
   private isConnectReady(groomer: {
