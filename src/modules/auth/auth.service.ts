@@ -13,6 +13,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { sanitizeUser } from '../../common/utils/sanitize-user';
 import { EmailService } from '../email/email.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -124,10 +125,13 @@ export class AuthService {
       },
       include: { groomerProfile: true },
     });
+    const notification = renderNotificationTemplate('ADMIN_NEW_GROOMER', {
+      GroomerName: user.fullName,
+    });
     await this.notifications.createForAdmins(
       'ADMIN_ACTION',
-      'New groomer registration',
-      `${user.fullName} submitted a groomer registration for approval.`,
+      notification.title,
+      notification.body,
       {
         targetScreen: 'groomer_approval',
         groomerId: user.groomerProfile?.id,

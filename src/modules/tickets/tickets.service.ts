@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 import {
   CreateTicketDto,
   ReplyTicketDto,
@@ -54,10 +55,17 @@ export class TicketsService {
       },
       include: { messages: true },
     });
+    const requester = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { fullName: true },
+    });
+    const notification = renderNotificationTemplate('ADMIN_NEW_SUPPORT_TICKET', {
+      CustomerName: requester?.fullName,
+    });
     await this.notifications.createForAdmins(
       'ADMIN_ACTION',
-      'New support ticket',
-      dto.subject,
+      notification.title,
+      dto.subject || notification.body,
       {
         targetScreen: 'ticket_details',
         ticketId: ticket.id,
@@ -185,18 +193,21 @@ export class TicketsService {
       where: { id: ticketId },
       data: { status: role === 'ADMIN' ? 'IN_PROGRESS' : ticket.status },
     });
+    const notification = renderNotificationTemplate('SUPPORT_TICKET_REPLY', {
+      Message: dto.message,
+    });
     await this.notifications.create(
       role === 'ADMIN' ? ticket.requesterId : userId,
       'TICKET_REPLY',
-      'Ticket reply',
-      dto.message,
+      notification.title,
+      notification.body,
       { targetScreen: 'ticket_details', ticketId },
     );
     if (role !== 'ADMIN') {
       await this.notifications.createForAdmins(
         'TICKET_REPLY',
-        'Ticket reply from user',
-        dto.message,
+        notification.title,
+        notification.body,
         {
           targetScreen: 'ticket_details',
           ticketId,

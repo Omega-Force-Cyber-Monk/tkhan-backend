@@ -7,6 +7,8 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
+import { ReviewReminderService } from '../notifications/review-reminder.service';
 import { PaymentsService } from '../payments/payments.service';
 import { PayoutsService } from '../payouts/payouts.service';
 import {
@@ -85,6 +87,7 @@ export class BookingsService {
     private readonly notifications: NotificationsService,
     private readonly payments: PaymentsService,
     private readonly payouts: PayoutsService,
+    private readonly reviewReminders: ReviewReminderService,
   ) {}
 
   async create(buyerId: string, dto: CreateBookingDto) {
@@ -399,6 +402,10 @@ export class BookingsService {
   async accept(groomerId: string, id: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: {
+        groomer: true,
+        availabilitySlot: true,
+      },
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
@@ -421,11 +428,16 @@ export class BookingsService {
       where: { id },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
     });
+    const notification = renderNotificationTemplate('BUYER_BOOKING_CONFIRMED', {
+      GroomerName: booking.groomer.fullName,
+      Date: booking.availabilitySlot?.startTime,
+      Time: booking.availabilitySlot?.startTime,
+    });
     await this.notifications.create(
       updated.buyerId,
       'BOOKING_ACCEPTED',
-      'Booking accepted',
-      'Your groomer accepted the booking.',
+      notification.title,
+      notification.body,
       { targetScreen: 'booking_details', bookingId: id },
     );
     this.notifications.emitBookingUpdated(
@@ -444,6 +456,7 @@ export class BookingsService {
   async reject(groomerId: string, id: string, dto: BookingDecisionDto) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: { groomer: true },
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
@@ -462,11 +475,17 @@ export class BookingsService {
         where: { id: booking.availabilitySlotId },
         data: { isBooked: false },
       });
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_BOOKING_DECLINED',
+      {
+        GroomerName: booking.groomer.fullName,
+      },
+    );
     await this.notifications.create(
       booking.buyerId,
       'BOOKING_REJECTED',
-      'Booking rejected',
-      dto.reason,
+      buyerNotification.title,
+      buyerNotification.body,
       { targetScreen: 'booking_details', bookingId: id },
     );
     this.notifications.emitBookingUpdated(
@@ -480,10 +499,13 @@ export class BookingsService {
         reason: dto.reason,
       },
     );
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_BOOKING_REJECTED',
+    );
     await this.notifications.createForAdmins(
       'BOOKING_REJECTED',
-      'Booking rejected',
-      dto.reason ?? 'A groomer rejected a booking.',
+      adminNotification.title,
+      dto.reason ?? adminNotification.body,
       {
         targetScreen: 'booking_details',
         bookingId: id,
@@ -501,6 +523,7 @@ export class BookingsService {
   ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: { pet: true },
     });
     if (booking.groomerId !== groomerId) {
       throw new ForbiddenException('Booking belongs to another groomer');
@@ -518,11 +541,14 @@ export class BookingsService {
         ...(beforeImage && { beforeImage }),
       },
     });
+    const notification = renderNotificationTemplate('BUYER_APPOINTMENT_STARTED', {
+      PetName: booking.pet.name,
+    });
     await this.notifications.create(
       updated.buyerId,
       'BOOKING_ACCEPTED',
-      'Service in progress',
-      'Your groomer has started working on the booking.',
+      notification.title,
+      notification.body,
       { targetScreen: 'booking_details', bookingId: id },
     );
     this.notifications.emitBookingUpdated(
@@ -562,11 +588,14 @@ export class BookingsService {
         ...(afterImage && { afterImage }),
       },
     });
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_COMPLETION_REQUESTED',
+    );
     await this.notifications.create(
       updated.buyerId,
       'COMPLETION_REQUESTED',
-      'Completion requested',
-      'Please approve completion if the service is done.',
+      buyerNotification.title,
+      buyerNotification.body,
       { targetScreen: 'booking_details', bookingId: id },
     );
     this.notifications.emitBookingUpdated(
@@ -579,10 +608,13 @@ export class BookingsService {
         groomerId: updated.groomerId,
       },
     );
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_COMPLETION_REQUESTED',
+    );
     await this.notifications.createForAdmins(
       'COMPLETION_REQUESTED',
-      'Completion requested',
-      'A groomer requested booking completion approval.',
+      adminNotification.title,
+      adminNotification.body,
       {
         targetScreen: 'booking_details',
         bookingId: id,
@@ -616,13 +648,14 @@ export class BookingsService {
         data: { status: 'COMPLETED' },
       }),
     ]);
+    const groomerNotification = renderNotificationTemplate(
+      'GROOMER_BOOKING_COMPLETED',
+    );
     await this.notifications.create(
       updated.groomerId,
       'BOOKING_COMPLETED',
-      'Booking completed',
-      role === 'ADMIN'
-        ? 'The admin approved completion.'
-        : 'The buyer approved completion.',
+      groomerNotification.title,
+      groomerNotification.body,
       { targetScreen: 'booking_details', bookingId: id },
     );
     this.notifications.emitBookingUpdated(
@@ -638,12 +671,11 @@ export class BookingsService {
       },
     );
     await this.payouts.releaseForBooking(id);
+    const adminNotification = renderNotificationTemplate('ADMIN_BOOKING_COMPLETED');
     await this.notifications.createForAdmins(
       'BOOKING_COMPLETED',
-      'Booking completed',
-      role === 'ADMIN'
-        ? 'An admin approved booking completion.'
-        : 'A buyer approved booking completion.',
+      adminNotification.title,
+      adminNotification.body,
       {
         targetScreen: 'booking_details',
         bookingId: id,
@@ -653,6 +685,7 @@ export class BookingsService {
         approvedById: userId,
       },
     );
+    await this.reviewReminders.sendReviewRequest(id);
     return updated;
   }
 

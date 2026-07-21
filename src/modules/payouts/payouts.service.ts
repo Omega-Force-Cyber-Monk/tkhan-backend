@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 
 const payoutListInclude = {
   booking: true,
@@ -134,7 +135,7 @@ export class PayoutsService {
 
     const payment = booking.payments[0];
     if (!payment?.stripeChargeId) {
-      return this.prisma.payout.update({
+      const failed = await this.prisma.payout.update({
         where: { id: payout.id },
         data: {
           status: 'FAILED',
@@ -142,6 +143,24 @@ export class PayoutsService {
         },
         include: payoutListInclude,
       });
+
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_FAILED',
+      );
+      await this.notifications.create(
+        booking.groomerId,
+        'PAYOUT_FAILED',
+        groomerNotification.title,
+        groomerNotification.body,
+        {
+          targetScreen: 'earnings',
+          bookingId: booking.id,
+          payoutId: failed.id,
+          reason: failed.failureReason,
+        },
+      );
+
+      return failed;
     }
 
     const amountInCents = Math.round(Number(payout.amount) * 100);
@@ -183,11 +202,14 @@ export class PayoutsService {
         include: payoutListInclude,
       });
 
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_SENT',
+      );
       await this.notifications.create(
         booking.groomerId,
         'ADMIN_ACTION',
-        'Payout sent to Stripe',
-        'Your completed booking earnings were transferred to your Stripe payout account.',
+        groomerNotification.title,
+        groomerNotification.body,
         {
           targetScreen: 'earnings',
           bookingId: booking.id,
@@ -196,10 +218,11 @@ export class PayoutsService {
         },
       );
 
+      const adminNotification = renderNotificationTemplate('ADMIN_PAYOUT_SENT');
       await this.notifications.createForAdmins(
         'ADMIN_ACTION',
-        'Automatic payout sent',
-        'A completed booking earning was transferred to the groomer Stripe account.',
+        adminNotification.title,
+        adminNotification.body,
         {
           targetScreen: 'booking_details',
           bookingId: booking.id,
@@ -227,10 +250,27 @@ export class PayoutsService {
         )}`,
       );
 
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_FAILED',
+      );
+      await this.notifications.create(
+        booking.groomerId,
+        'PAYOUT_FAILED',
+        groomerNotification.title,
+        groomerNotification.body,
+        {
+          targetScreen: 'earnings',
+          bookingId: booking.id,
+          payoutId: failed.id,
+          reason: failed.failureReason,
+        },
+      );
+
+      const adminNotification = renderNotificationTemplate('ADMIN_PAYOUT_FAILED');
       await this.notifications.createForAdmins(
         'ADMIN_ACTION',
-        'Automatic payout failed',
-        'A booking payout could not be transferred to Stripe Connect.',
+        adminNotification.title,
+        adminNotification.body,
         {
           targetScreen: 'booking_details',
           bookingId: booking.id,
@@ -460,11 +500,14 @@ export class PayoutsService {
 
     const isReady = this.isConnectReady(updated);
     if (isReady && !wasReady) {
+      const notification = renderNotificationTemplate(
+        'GROOMER_STRIPE_SETUP_COMPLETE',
+      );
       await this.notifications.create(
         groomer.userId,
         'ADMIN_ACTION',
-        'Stripe payout setup complete',
-        'Your Stripe payout setup is complete. You can now receive automated payouts.',
+        notification.title,
+        notification.body,
         {
           targetScreen: 'earnings',
           connectedAccountId: updated.stripeConnectedAccountId,
