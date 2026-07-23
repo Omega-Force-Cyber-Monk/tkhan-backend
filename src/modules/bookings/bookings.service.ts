@@ -430,8 +430,8 @@ export class BookingsService {
     });
     const notification = renderNotificationTemplate('BUYER_BOOKING_CONFIRMED', {
       GroomerName: booking.groomer.fullName,
-      Date: booking.availabilitySlot?.startTime,
-      Time: booking.availabilitySlot?.startTime,
+      Date: this.formatNotificationDate(booking.availabilitySlot?.startTime),
+      Time: this.formatNotificationTime(booking.availabilitySlot?.startTime),
     });
     await this.notifications.create(
       updated.buyerId,
@@ -712,5 +712,25 @@ export class BookingsService {
       where: { id },
       data: updateData,
     });
+  }
+
+  private formatNotificationDate(value?: Date | null) {
+    if (!value) return undefined;
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(value);
+  }
+
+  private formatNotificationTime(value?: Date | null) {
+    if (!value) return undefined;
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'UTC',
+    }).format(value);
   }
 }

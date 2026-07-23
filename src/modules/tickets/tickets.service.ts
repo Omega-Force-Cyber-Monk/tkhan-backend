@@ -196,14 +196,15 @@ export class TicketsService {
     const notification = renderNotificationTemplate('SUPPORT_TICKET_REPLY', {
       Message: dto.message,
     });
-    await this.notifications.create(
-      role === 'ADMIN' ? ticket.requesterId : userId,
-      'TICKET_REPLY',
-      notification.title,
-      notification.body,
-      { targetScreen: 'ticket_details', ticketId },
-    );
-    if (role !== 'ADMIN') {
+    if (role === 'ADMIN') {
+      await this.notifications.create(
+        ticket.requesterId,
+        'TICKET_REPLY',
+        notification.title,
+        notification.body,
+        { targetScreen: 'ticket_details', ticketId },
+      );
+    } else {
       await this.notifications.createForAdmins(
         'TICKET_REPLY',
         notification.title,

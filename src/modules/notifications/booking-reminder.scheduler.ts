@@ -184,10 +184,20 @@ export class BookingReminderScheduler implements OnModuleInit, OnModuleDestroy {
   }
 
   private formatDate(value: Date) {
-    return value.toISOString().slice(0, 10);
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(value);
   }
 
   private formatTime(value: Date) {
-    return value.toISOString().slice(11, 16);
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'UTC',
+    }).format(value);
   }
 }
