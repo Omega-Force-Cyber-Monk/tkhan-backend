@@ -425,6 +425,9 @@ export class PayoutsService {
           '/groomer/connect/return',
         ),
         type: 'account_onboarding',
+        collection_options: {
+          fields: 'currently_due',
+        },
       });
     } catch (error) {
       throw this.wrapStripeError('create Stripe onboarding link', error);
@@ -583,6 +586,13 @@ export class PayoutsService {
       account = await this.stripe.accounts.create({
         type: 'express',
         email: groomer.user.email,
+        business_type: 'individual',
+        business_profile: {
+          name: groomer.businessName || groomer.legalFullName,
+          product_description:
+            'Mobile pet grooming services provided by an individual groomer.',
+          mcc: '7299',
+        },
         capabilities: {
           transfers: {
             requested: true,
