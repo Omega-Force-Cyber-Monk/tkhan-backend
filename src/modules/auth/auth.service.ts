@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   InternalServerErrorException,
   Injectable,
   UnauthorizedException,
@@ -66,6 +67,9 @@ export class AuthService {
       );
     } catch (error) {
       await this.prisma.user.delete({ where: { id: user.id } });
+      if (error instanceof HttpException) {
+        throw error;
+      }
       const message =
         error instanceof Error &&
         'message' in error &&
