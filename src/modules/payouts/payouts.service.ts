@@ -391,9 +391,24 @@ export class PayoutsService {
   }
 
   async connectStatus(userId: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+    let groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
       where: { userId },
     });
+    if (groomer.stripeConnectedAccountId) {
+      try {
+        const account = await this.stripe.accounts.retrieve(
+          groomer.stripeConnectedAccountId,
+        );
+        groomer =
+          (await this.handleConnectedAccountUpdated(account)) ?? groomer;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to refresh Stripe Connect status for groomer ${groomer.id}: ${this.getStripeErrorMessage(
+            error,
+          )}`,
+        );
+      }
+    }
     return this.mapConnectStatus(groomer);
   }
 
