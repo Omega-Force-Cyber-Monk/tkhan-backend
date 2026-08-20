@@ -310,6 +310,7 @@ export class BookingsService {
           buyer: { select: bookingBuyerSelect },
           groomer: { select: bookingGroomerSelect },
           payouts: bookingPayoutInclude,
+          reviews: true,
         },
       }),
       this.prisma.booking.count({ where }),
@@ -350,8 +351,16 @@ export class BookingsService {
     const latestPayout = booking.payouts?.[0] ?? null;
     const scheduledDate = booking.availabilitySlot?.availability?.date ?? null;
     const payoutSummary = this.summarizePayout(latestPayout);
+    const isReviewed =
+      Array.isArray(booking.reviews) &&
+      booking.reviews.some(
+        (review: any) =>
+          review.reviewerId === booking.buyerId &&
+          review.targetType === 'GROOMER',
+      );
     return {
       ...booking,
+      isReviewed,
       scheduledDate,
       earnings: {
         subtotalAmount: booking.subtotalAmount,

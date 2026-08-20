@@ -271,6 +271,8 @@ export class BuyerService {
               id: true,
               bookingNumber: true,
               completedAt: true,
+              beforeImage: true,
+              afterImage: true,
               pet: {
                 select: {
                   id: true,
