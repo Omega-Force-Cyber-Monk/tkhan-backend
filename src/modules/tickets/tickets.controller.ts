@@ -29,6 +29,10 @@ export class TicketsController {
   @Get() list(@CurrentUser() user: AuthUser) {
     return this.ticketsService.list(user.sub, user.role);
   }
+  @Get('unread-count')
+  unreadCount(@CurrentUser() user: AuthUser) {
+    return this.ticketsService.unreadCount(user.sub, user.role);
+  }
   @Get(':id') detail(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.ticketsService.detail(user.sub, user.role, id);
   }

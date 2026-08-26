@@ -1,0 +1,172 @@
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "e8f87e2e-d6ad-4eef-8774-d4afdd7cc99d",
+        "userId": "ef707015-214b-497f-99d2-a41de8a70547",
+        "experienceYears": 4,
+        "legalFullName": "Demo Groomer Two",
+        "idNumber": "DEMO-ef707015",
+        "idType": "PASSPORT",
+        "businessName": "Demo Groomer Two Grooming",
+        "serviceArea": "Dallas",
+        "businessAddress": "240 Elm Street",
+        "idFrontImage": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "idBackImage": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "selfieWithId": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "shortBio": "Verified demo groomer account.",
+        "about": null,
+        "certifications": [],
+        "serviceModes": [],
+        "availableForBookings": true,
+        "approvalStatus": "APPROVED",
+        "rejectionReason": null,
+        "approvedAt": "2026-06-10T06:23:55.513Z",
+        "approvedById": null,
+        "createdAt": "2026-06-10T06:23:55.514Z",
+        "updatedAt": "2026-06-10T06:23:55.514Z",
+        "user": {
+          "id": "ef707015-214b-497f-99d2-a41de8a70547",
+          "fullName": "Demo Groomer Two",
+          "phone": "+15550002002",
+          "email": "groomer2@tkhan.local",
+          "password": "$2b$12$FOoAsgfBu/FBGxx6CAE3HeoaKkSgb1R7yuwfvrxjZok4wQdLGxTVy",
+          "profileImage": null,
+          "streetAddress": "240 Elm Street",
+          "unitSuite": null,
+          "city": "Dallas",
+          "province": "TX",
+          "postalCode": "75201",
+          "role": "GROOMER",
+          "emailVerified": true,
+          "emailVerificationToken": null,
+          "emailVerificationExpiresAt": null,
+          "status": "ACTIVE",
+          "isBlocked": false,
+          "refreshTokenHash": null,
+          "passwordResetTokenHash": null,
+          "passwordResetExpiresAt": null,
+          "createdAt": "2026-06-10T06:23:55.284Z",
+          "updatedAt": "2026-06-10T06:23:55.284Z"
+        },
+        "services": [],
+        "isFavorite": false,
+        "favoriteId": null,
+        "averageRating": 0,
+        "priceRange": null
+      },
+      {
+        "id": "ed7b972f-7797-4302-9b93-9d45ed9e57ae",
+        "userId": "522c5a00-ccdf-4276-9ae5-26b68217149f",
+        "experienceYears": 4,
+        "legalFullName": "Demo Groomer One",
+        "idNumber": "DEMO-522c5a00",
+        "idType": "PASSPORT",
+        "businessName": "Demo Groomer One Grooming",
+        "serviceArea": "Austin",
+        "businessAddress": "120 Market Street",
+        "idFrontImage": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "idBackImage": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "selfieWithId": "https://res.cloudinary.com/demo/image/upload/sample.jpg",
+        "shortBio": "Verified demo groomer account.",
+        "about": "Abc About",
+        "certifications": [
+          {
+            "certificateTitle": "Ccccc",
+            "issuingOrganization": "Softvence"
+          }
+        ],
+        "serviceModes": [],
+        "availableForBookings": true,
+        "approvalStatus": "APPROVED",
+        "rejectionReason": null,
+        "approvedAt": "2026-06-10T06:23:54.812Z",
+        "approvedById": null,
+        "createdAt": "2026-06-10T06:23:54.814Z",
+        "updatedAt": "2026-06-11T02:42:31.543Z",
+        "user": {
+          "id": "522c5a00-ccdf-4276-9ae5-26b68217149f",
+          "fullName": "Labib Groomer",
+          "phone": "+15550002001",
+          "email": "groomer1@tkhan.local",
+          "password": "$2b$12$OyVZDkN5G3U67H4WQLCBrO0OG40E58ENs7MDVW1dilc3ntiTLpjTu",
+          "profileImage": "https://res.cloudinary.com/dgy7uig7c/image/upload/v1781145748/tkhan/profile-images/omk24f1l74opin4iz6f5.jpg",
+          "streetAddress": "120 Market Street",
+          "unitSuite": null,
+          "city": "Austin",
+          "province": "TX",
+          "postalCode": "78701",
+          "role": "GROOMER",
+          "emailVerified": true,
+          "emailVerificationToken": null,
+          "emailVerificationExpiresAt": null,
+          "status": "ACTIVE",
+          "isBlocked": false,
+          "refreshTokenHash": "$2b$12$zYu9VTZKx3B4UCtsAZiYyuBMD.0H0BJalkWfV9ZoEVcBRObgKdsY.",
+          "passwordResetTokenHash": null,
+          "passwordResetExpiresAt": null,
+          "createdAt": "2026-06-10T06:23:54.585Z",
+          "updatedAt": "2026-06-11T04:42:52.928Z"
+        },
+        "services": [
+          {
+            "id": "fbf46480-e6ec-492a-86ac-00af48a2516a",
+            "groomerId": "ed7b972f-7797-4302-9b93-9d45ed9e57ae",
+            "categoryId": "d32c9e29-8038-44b7-90be-7603d4b320a5",
+            "title": "Completed Demo Groom",
+            "description": "Completed service used to demonstrate payout records.",
+            "durationMinutes": 90,
+            "price": "80",
+            "active": true,
+            "createdAt": "2026-06-10T06:23:58.982Z",
+            "updatedAt": "2026-06-10T06:23:58.982Z",
+            "category": {
+              "id": "d32c9e29-8038-44b7-90be-7603d4b320a5",
+              "name": "Demo Payout Services",
+              "description": "Seed services used for payout examples.",
+              "imageUrl": null,
+              "active": true,
+              "createdAt": "2026-06-10T06:23:57.341Z",
+              "updatedAt": "2026-06-10T06:23:57.341Z"
+            }
+          },
+          {
+            "id": "864794b7-af1b-491d-af87-67e3a4069dee",
+            "groomerId": "ed7b972f-7797-4302-9b93-9d45ed9e57ae",
+            "categoryId": "65f70f88-5d9a-41c6-9a0d-741f65dc88cd",
+            "title": "ABC Full Grooming",
+            "description": "ABC Service",
+            "durationMinutes": 30,
+            "price": "120",
+            "active": true,
+            "createdAt": "2026-06-11T02:57:21.538Z",
+            "updatedAt": "2026-06-11T02:57:32.071Z",
+            "category": {
+              "id": "65f70f88-5d9a-41c6-9a0d-741f65dc88cd",
+              "name": "Bath & Brush",
+              "description": "Bathing, brushing, and coat refresh services.",
+              "imageUrl": null,
+              "active": true,
+              "createdAt": "2026-06-10T06:24:01.592Z",
+              "updatedAt": "2026-06-10T06:24:01.592Z"
+            }
+          }
+        ],
+        "isFavorite": false,
+        "favoriteId": null,
+        "averageRating": 5,
+        "priceRange": {
+          "min": 80,
+          "max": 120
+        }
+      }
+    ],
+    "meta": {
+      "total": 2,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 1
+    }
+  }
+}

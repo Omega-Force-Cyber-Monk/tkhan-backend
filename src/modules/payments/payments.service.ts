@@ -12,6 +12,8 @@ import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
+import { PayoutsService } from '../payouts/payouts.service';
 
 @Injectable()
 export class PaymentsService implements OnModuleInit, OnModuleDestroy {
@@ -23,6 +25,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly payouts: PayoutsService,
   ) {
     this.stripe = new Stripe(
       this.config.getOrThrow<string>('STRIPE_SECRET_KEY'),
@@ -49,11 +52,17 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
     });
-    if (!booking) throw new NotFoundException('Booking not found');
-    if (booking.buyerId !== buyerId)
-      throw new BadRequestException('Booking belongs to another buyer');
-    if (!['PENDING', 'PAYMENT_PENDING'].includes(booking.status))
-      throw new BadRequestException('Booking is not in a payable state');
+    if (!booking) throw new NotFoundException('Selected booking was not found');
+    if (booking.buyerId !== buyerId) {
+      throw new BadRequestException(
+        'You can only create a payment intent for your own booking',
+      );
+    }
+    if (!['PENDING', 'PAYMENT_PENDING'].includes(booking.status)) {
+      throw new BadRequestException(
+        `Payment intent can only be created while the booking is waiting for payment. Current booking status: ${booking.status}`,
+      );
+    }
     const amountInCents = Math.round(Number(booking.totalAmount) * 100);
     if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
       throw new InternalServerErrorException(
@@ -162,17 +171,32 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       await this.markPaymentSucceeded(
         String(intent.metadata?.paymentId),
         String(intent.id),
+        intent.latest_charge ? String(intent.latest_charge) : null,
       );
     }
     if (event.type === 'payment_intent.payment_failed') {
       const intent = event.data.object;
-      await this.prisma.payment.updateMany({
+      const payment = await this.prisma.payment.findFirst({
         where: { stripePaymentIntentId: intent.id },
-        data: {
-          status: 'FAILED',
-          failureReason: intent.last_payment_error?.message,
-        },
+        include: { booking: true },
       });
+      if (payment) {
+        await this.markPaymentFailed(
+          payment,
+          intent.last_payment_error?.message,
+        );
+      } else {
+        await this.prisma.payment.updateMany({
+          where: { stripePaymentIntentId: intent.id },
+          data: {
+            status: 'FAILED',
+            failureReason: intent.last_payment_error?.message,
+          },
+        });
+      }
+    }
+    if (event.type === 'account.updated') {
+      await this.payouts.handleConnectedAccountUpdated(event.data.object);
     }
     return { received: true };
   }
@@ -180,9 +204,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
     });
-    if (!booking) throw new NotFoundException('Booking not found');
+    if (!booking) throw new NotFoundException('Selected booking was not found');
     if (booking.buyerId !== buyerId) {
-      throw new BadRequestException('Booking belongs to another buyer');
+      throw new BadRequestException(
+        'You can only confirm payment for your own booking',
+      );
     }
     return this.syncPaymentStatusForBooking(bookingId);
   }
@@ -193,13 +219,17 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       orderBy: { createdAt: 'desc' },
     });
     if (!payment) {
-      throw new NotFoundException('Payment record not found');
+      throw new NotFoundException(
+        'No payment record was found for this booking',
+      );
     }
     if (payment.status === 'SUCCEEDED' || payment.status === 'COMPLETED') {
       return payment;
     }
     if (!payment.stripePaymentIntentId) {
-      throw new BadRequestException('Payment intent has not been created yet');
+      throw new BadRequestException(
+        'Create a payment intent first before confirming booking payment',
+      );
     }
 
     let intent: any;
@@ -212,44 +242,60 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (intent.status === 'succeeded') {
-      return this.markPaymentSucceeded(payment.id, intent.id);
+      return this.markPaymentSucceeded(
+        payment.id,
+        intent.id,
+        intent.latest_charge ? String(intent.latest_charge) : null,
+      );
     }
     if (intent.status === 'canceled') {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'FAILED',
-          failureReason: 'Payment intent was canceled in Stripe',
+      await this.markPaymentFailed(
+        {
+          ...payment,
+          booking: await this.prisma.booking.findUniqueOrThrow({
+            where: { id: payment.bookingId },
+          }),
         },
-      });
-      throw new BadRequestException('Payment was canceled');
+        'Payment intent was canceled in Stripe',
+      );
+      throw new BadRequestException(
+        'Stripe payment was canceled. Create a new payment intent and try again',
+      );
     }
     if (intent.status === 'requires_payment_method') {
-      await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'FAILED',
-          failureReason:
-            intent.last_payment_error?.message ?? 'Payment method is required',
+      await this.markPaymentFailed(
+        {
+          ...payment,
+          booking: await this.prisma.booking.findUniqueOrThrow({
+            where: { id: payment.bookingId },
+          }),
         },
-      });
+        intent.last_payment_error?.message ?? 'Payment method is required',
+      );
       throw new BadRequestException(
-        intent.last_payment_error?.message ?? 'Payment is incomplete',
+        intent.last_payment_error?.message ??
+          'Stripe payment is incomplete. Complete the card payment first',
       );
     }
 
     throw new BadRequestException(
-      `Payment is not completed yet. Current Stripe status: ${intent.status}`,
+      `Stripe payment is not completed yet. Complete the payment first. Current Stripe status: ${intent.status}`,
     );
   }
 
-  async markPaymentSucceeded(paymentId: string, paymentIntentId: string) {
+  async markPaymentSucceeded(
+    paymentId: string,
+    paymentIntentId: string,
+    stripeChargeId?: string | null,
+  ) {
     const existingPayment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { booking: true },
     });
     if (!existingPayment) {
-      throw new NotFoundException('Payment record not found');
+      throw new NotFoundException(
+        'Payment record was not found during Stripe confirmation',
+      );
     }
     if (existingPayment.status === 'REFUNDED') {
       return existingPayment;
@@ -263,6 +309,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       data: {
         status: 'SUCCEEDED',
         stripePaymentIntentId: paymentIntentId,
+        stripeChargeId: stripeChargeId ?? existingPayment.stripeChargeId,
         paidAt: new Date(),
       },
       include: { booking: true },
@@ -274,19 +321,66 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         requestedAt: payment.booking.requestedAt ?? new Date(),
       },
     });
+    const [buyer, groomer] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: booking.buyerId },
+        select: { fullName: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: booking.groomerId },
+        select: { fullName: true },
+      }),
+    ]);
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_PAYMENT_SUCCESS',
+    );
     await this.notifications.create(
       booking.buyerId,
       'PAYMENT_SUCCESS',
-      'Payment received',
-      'Your booking payment is held until completion.',
-      { bookingId: booking.id },
+      buyerNotification.title,
+      buyerNotification.body,
+      { targetScreen: 'booking_details', bookingId: booking.id },
+    );
+    const groomerNotification = renderNotificationTemplate(
+      'GROOMER_NEW_BOOKING_REQUEST',
+      {
+        CustomerName: buyer?.fullName,
+      },
     );
     await this.notifications.create(
       booking.groomerId,
       'BOOKING_CREATED',
-      'New booking request',
-      'A buyer requested a booking.',
-      { bookingId: booking.id },
+      groomerNotification.title,
+      groomerNotification.body,
+      { targetScreen: 'booking_details', bookingId: booking.id },
+    );
+    this.notifications.emitBookingUpdated(
+      [booking.buyerId, booking.groomerId],
+      {
+        bookingId: booking.id,
+        status: booking.status,
+        updatedAt: booking.updatedAt,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
+    );
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_NEW_PAID_BOOKING',
+      {
+        CustomerName: buyer?.fullName,
+        GroomerName: groomer?.fullName,
+      },
+    );
+    await this.notifications.createForAdmins(
+      'BOOKING_CREATED',
+      adminNotification.title,
+      adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: booking.id,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
     );
     return payment;
   }
@@ -336,12 +430,40 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }
       return updated;
     });
+    const buyerNotification = renderNotificationTemplate('BUYER_REFUND_ISSUED');
     await this.notifications.create(
       booking.buyerId,
       'PAYMENT_REFUND',
-      'Payment refunded',
-      'A full refund was issued.',
-      { bookingId },
+      buyerNotification.title,
+      buyerNotification.body,
+      { targetScreen: 'booking_details', bookingId },
+    );
+    if (bookingStatus === 'REFUNDED') {
+      this.notifications.emitBookingUpdated(
+        [booking.buyerId, booking.groomerId],
+        {
+          bookingId,
+          status: booking.status,
+          updatedAt: booking.updatedAt,
+          buyerId: booking.buyerId,
+          groomerId: booking.groomerId,
+          refundId: refund?.id ?? null,
+          reason,
+        },
+      );
+    }
+    const adminNotification = renderNotificationTemplate('ADMIN_REFUND_ISSUED');
+    await this.notifications.createForAdmins(
+      'PAYMENT_REFUND',
+      adminNotification.title,
+      reason ?? adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+        refundId: refund?.id,
+      },
     );
     return { refundId: refund?.id, booking };
   }
@@ -385,6 +507,54 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private isStripeMissingResourceError(error: unknown) {
     const stripeError = error as { code?: string };
     return stripeError.code === 'resource_missing';
+  }
+
+  private async markPaymentFailed(
+    payment: any,
+    failureReason?: string | null,
+  ) {
+    const shouldNotify = payment.status !== 'FAILED';
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'FAILED',
+        failureReason: failureReason ?? 'Payment failed',
+      },
+    });
+    if (!shouldNotify || !payment.booking) {
+      return updated;
+    }
+
+    const buyerNotification = renderNotificationTemplate('BUYER_PAYMENT_FAILED');
+    await this.notifications.create(
+      payment.booking.buyerId,
+      'PAYMENT_FAILED',
+      buyerNotification.title,
+      buyerNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: payment.bookingId,
+        paymentId: payment.id,
+        reason: failureReason,
+      },
+    );
+
+    const adminNotification = renderNotificationTemplate('ADMIN_PAYMENT_ISSUE');
+    await this.notifications.createForAdmins(
+      'PAYMENT_FAILED',
+      adminNotification.title,
+      failureReason ?? adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: payment.bookingId,
+        buyerId: payment.booking.buyerId,
+        groomerId: payment.booking.groomerId,
+        paymentId: payment.id,
+        reason: failureReason,
+      },
+    );
+
+    return updated;
   }
 
   private wrapStripeError(action: string, error: unknown) {

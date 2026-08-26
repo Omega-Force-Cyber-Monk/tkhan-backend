@@ -153,6 +153,14 @@ export class UpdateGroomerProfileDto {
   @IsOptional()
   @IsString()
   profileImage?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() businessName?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() businessAddress?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() serviceArea?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() streetAddress?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() unitSuite?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() province?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() shortBio?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() about?: string;
   @ApiPropertyOptional({ type: 'string', format: 'binary' })

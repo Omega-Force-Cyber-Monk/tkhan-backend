@@ -190,6 +190,7 @@ async function seedDemoUser(user: DemoUserSeed) {
         availableForBookings: true,
         approvalStatus: 'APPROVED',
         approvedAt: new Date(),
+        gstHstRegistrationNumber: `GST-${savedUser.id.slice(0, 8)}`,
       },
       create: {
         userId: savedUser.id,
@@ -201,6 +202,7 @@ async function seedDemoUser(user: DemoUserSeed) {
         serviceArea: user.city || 'Austin metro',
         businessAddress:
           user.streetAddress || '120 Market Street, Austin, TX',
+        gstHstRegistrationNumber: `GST-${savedUser.id.slice(0, 8)}`,
         idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
         idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
         selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
@@ -261,6 +263,7 @@ async function seedPendingGroomer() {
       businessName: 'Pending Paws Demo',
       serviceArea: 'Houston, TX',
       businessAddress: '400 Demo Lane, Houston, TX',
+      gstHstRegistrationNumber: `GST-PENDING-${user.id.slice(0, 8)}`,
       idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
       idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
       selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
@@ -280,6 +283,7 @@ async function seedPendingGroomer() {
       businessName: 'Pending Paws Demo',
       serviceArea: 'Houston, TX',
       businessAddress: '400 Demo Lane, Houston, TX',
+      gstHstRegistrationNumber: `GST-PENDING-${user.id.slice(0, 8)}`,
       idFrontImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
       idBackImage: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
       selfieWithId: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',

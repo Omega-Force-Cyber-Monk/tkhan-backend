@@ -1,69 +1,83 @@
 import {
   BadRequestException,
+  BadGatewayException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Stripe from 'stripe';
 import { PrismaService } from '../../database/prisma.service';
-import { paginate, paginated } from '../../common/utils/pagination';
 import { NotificationsService } from '../notifications/notifications.service';
-import {
-  AdminApproveWithdrawalRequestDto,
-  AdminMarkWithdrawalPaidDto,
-  AdminRejectWithdrawalRequestDto,
-  CreateGroomerBankAccountDto,
-  CreateWithdrawalRequestDto,
-  UpdateGroomerBankAccountDto,
-  WithdrawalRequestQueryDto,
-} from './dto/payouts.dto';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 
-const ACTIVE_WITHDRAWAL_REQUEST_STATUSES = ['REQUESTED', 'APPROVED', 'PAID'];
-const PENDING_WITHDRAWAL_REQUEST_STATUSES = ['REQUESTED', 'APPROVED'];
-
-const withdrawalRequestInclude = {
-  bankAccount: true,
+const payoutListInclude = {
+  booking: true,
   groomer: {
     include: {
       user: true,
     },
   },
-  items: {
+} as const;
+
+const payoutDetailInclude = {
+  booking: {
     include: {
-      payout: {
-        include: {
-          booking: true,
+      buyer: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          profileImage: true,
         },
       },
+      groomer: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phone: true,
+          profileImage: true,
+        },
+      },
+      pet: true,
+      services: true,
+      addons: true,
+    },
+  },
+  groomer: {
+    include: {
+      user: true,
     },
   },
 } as const;
 
+type StripePayoutInterval = 'daily' | 'weekly' | 'monthly' | 'manual';
+type StripeWeeklyPayoutDay =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday';
+
 @Injectable()
 export class PayoutsService {
+  private readonly logger = new Logger(PayoutsService.name);
+  private readonly stripe: any;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.stripe = new Stripe(
+      this.config.getOrThrow<string>('STRIPE_SECRET_KEY'),
+    );
+  }
 
   async releaseForBooking(bookingId: string) {
-    const existingPayout = await this.prisma.payout.findUnique({
-      where: { bookingId },
-      include: {
-        withdrawalItems: {
-          include: {
-            withdrawalRequest: {
-              select: {
-                id: true,
-                status: true,
-                paidAt: true,
-              },
-            },
-          },
-        },
-      },
-    });
-    if (existingPayout) return existingPayout;
-
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
@@ -73,6 +87,9 @@ export class PayoutsService {
           },
         },
         payments: {
+          where: {
+            status: { in: ['SUCCEEDED', 'COMPLETED'] },
+          },
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
@@ -81,7 +98,7 @@ export class PayoutsService {
     if (!booking) throw new NotFoundException('Booking not found');
     if (booking.status !== 'COMPLETED') {
       throw new BadRequestException(
-        'Booking must be completed before earning entry creation',
+        'Booking must be completed before payout transfer',
       );
     }
 
@@ -90,54 +107,207 @@ export class PayoutsService {
       throw new BadRequestException('Booking groomer profile not found');
     }
 
-    return this.prisma.payout.create({
-      data: {
-        bookingId,
-        groomerId: groomerProfile.id,
-        amount: booking.groomerEarningAmount,
-        platformFee: booking.platformFeeAmount,
-        currency: booking.payments[0]?.currency ?? 'usd',
-      },
-      include: {
-        withdrawalItems: {
-          include: {
-            withdrawalRequest: {
-              select: {
-                id: true,
-                status: true,
-                paidAt: true,
-              },
-            },
-          },
-        },
-      },
+    let payout = await this.prisma.payout.findUnique({
+      where: { bookingId },
+      include: payoutListInclude,
     });
+    if (!payout) {
+      payout = await this.prisma.payout.create({
+        data: {
+          bookingId,
+          groomerId: groomerProfile.id,
+          amount: booking.groomerEarningAmount,
+          platformFee: booking.platformFeeAmount,
+          currency: booking.payments[0]?.currency ?? 'usd',
+          status: 'PENDING',
+        },
+        include: payoutListInclude,
+      });
+    }
+
+    if (['TRANSFERRED', 'PAID_OUT'].includes(payout.status)) {
+      return payout;
+    }
+
+    if (!this.isConnectReady(groomerProfile)) {
+      return payout;
+    }
+
+    const payment = booking.payments[0];
+    if (!payment?.stripeChargeId) {
+      const failed = await this.prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: 'FAILED',
+          failureReason: 'Stripe charge reference not found for payout transfer',
+        },
+        include: payoutListInclude,
+      });
+
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_FAILED',
+      );
+      await this.notifications.create(
+        booking.groomerId,
+        'PAYOUT_FAILED',
+        groomerNotification.title,
+        groomerNotification.body,
+        {
+          targetScreen: 'earnings',
+          bookingId: booking.id,
+          payoutId: failed.id,
+          reason: failed.failureReason,
+        },
+      );
+
+      return failed;
+    }
+
+    const amountInCents = Math.round(Number(payout.amount) * 100);
+    if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
+      return this.prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: 'TRANSFERRED',
+          transferredAt: new Date(),
+          failureReason: null,
+        },
+        include: payoutListInclude,
+      });
+    }
+
+    try {
+      const transfer = await this.stripe.transfers.create({
+        amount: amountInCents,
+        currency: payout.currency,
+        destination: groomerProfile.stripeConnectedAccountId,
+        source_transaction: payment.stripeChargeId,
+        transfer_group: booking.bookingNumber,
+        metadata: {
+          bookingId: booking.id,
+          payoutId: payout.id,
+          groomerId: groomerProfile.id,
+          groomerUserId: booking.groomerId,
+        },
+      });
+
+      const updated = await this.prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: 'TRANSFERRED',
+          stripeTransferId: transfer.id,
+          transferredAt: new Date(),
+          failureReason: null,
+        },
+        include: payoutListInclude,
+      });
+
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_SENT',
+      );
+      await this.notifications.create(
+        booking.groomerId,
+        'ADMIN_ACTION',
+        groomerNotification.title,
+        groomerNotification.body,
+        {
+          targetScreen: 'earnings',
+          bookingId: booking.id,
+          payoutId: updated.id,
+          stripeTransferId: updated.stripeTransferId,
+        },
+      );
+
+      const adminNotification = renderNotificationTemplate('ADMIN_PAYOUT_SENT');
+      await this.notifications.createForAdmins(
+        'ADMIN_ACTION',
+        adminNotification.title,
+        adminNotification.body,
+        {
+          targetScreen: 'booking_details',
+          bookingId: booking.id,
+          payoutId: updated.id,
+          groomerId: groomerProfile.id,
+          groomerUserId: booking.groomerId,
+          stripeTransferId: updated.stripeTransferId,
+        },
+      );
+
+      return updated;
+    } catch (error) {
+      const failed = await this.prisma.payout.update({
+        where: { id: payout.id },
+        data: {
+          status: 'FAILED',
+          failureReason: this.getStripeErrorMessage(error),
+        },
+        include: payoutListInclude,
+      });
+
+      this.logger.error(
+        `Failed to transfer payout ${payout.id} for booking ${booking.id}: ${this.getStripeErrorMessage(
+          error,
+        )}`,
+      );
+
+      const groomerNotification = renderNotificationTemplate(
+        'GROOMER_PAYOUT_FAILED',
+      );
+      await this.notifications.create(
+        booking.groomerId,
+        'PAYOUT_FAILED',
+        groomerNotification.title,
+        groomerNotification.body,
+        {
+          targetScreen: 'earnings',
+          bookingId: booking.id,
+          payoutId: failed.id,
+          reason: failed.failureReason,
+        },
+      );
+
+      const adminNotification = renderNotificationTemplate('ADMIN_PAYOUT_FAILED');
+      await this.notifications.createForAdmins(
+        'ADMIN_ACTION',
+        adminNotification.title,
+        adminNotification.body,
+        {
+          targetScreen: 'booking_details',
+          bookingId: booking.id,
+          payoutId: failed.id,
+          groomerId: groomerProfile.id,
+          groomerUserId: booking.groomerId,
+          reason: failed.failureReason,
+        },
+      );
+
+      return failed;
+    }
   }
 
   list() {
     return this.prisma.payout.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
-        booking: true,
-        groomer: {
-          include: { user: true },
-        },
-        withdrawalItems: {
-          include: {
-            withdrawalRequest: {
-              select: {
-                id: true,
-                amountRequested: true,
-                amountPaid: true,
-                status: true,
-                requestedAt: true,
-                paidAt: true,
-              },
-            },
-          },
-        },
-      },
+      include: payoutListInclude,
     });
+  }
+
+  async detail(userId: string, role: string, id: string) {
+    const payout = await this.prisma.payout.findUnique({
+      where: { id },
+      include: payoutDetailInclude,
+    });
+    if (!payout) {
+      throw new NotFoundException('Payout transaction not found');
+    }
+    if (role !== 'ADMIN' && payout.groomer.userId !== userId) {
+      throw new ForbiddenException('Payout transaction access denied');
+    }
+
+    return {
+      type: 'PAYOUT',
+      data: payout,
+    };
   }
 
   async summary(userId: string) {
@@ -149,9 +319,33 @@ export class PayoutsService {
     weekStart.setDate(now.getDate() - 7);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [balance, week, month, recentEarnings, recentWithdrawalRequests] =
+    const [earned, pending, transferred, failed, week, month, recentEarnings] =
       await Promise.all([
-        this.getBalanceSummary(groomer.id),
+        this.prisma.payout.aggregate({
+          where: { groomerId: groomer.id },
+          _sum: { amount: true },
+        }),
+        this.prisma.payout.aggregate({
+          where: {
+            groomerId: groomer.id,
+            status: 'PENDING',
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.payout.aggregate({
+          where: {
+            groomerId: groomer.id,
+            status: { in: ['TRANSFERRED', 'PAID_OUT'] },
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.payout.aggregate({
+          where: {
+            groomerId: groomer.id,
+            status: 'FAILED',
+          },
+          _sum: { amount: true },
+        }),
         this.prisma.payout.aggregate({
           where: {
             groomerId: groomer.id,
@@ -172,550 +366,445 @@ export class PayoutsService {
           take: 10,
           include: {
             booking: true,
-            withdrawalItems: {
-              include: {
-                withdrawalRequest: {
-                  select: {
-                    id: true,
-                    status: true,
-                    paidAt: true,
-                  },
-                },
-              },
-            },
-          },
-        }),
-        this.prisma.withdrawalRequest.findMany({
-          where: { groomerId: groomer.id },
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-          include: {
-            bankAccount: true,
           },
         }),
       ]);
 
-    return {
-      ...balance,
-      thisWeekIncome: week._sum.amount ?? 0,
-      thisMonthIncome: month._sum.amount ?? 0,
-      recentEarnings,
-      recentWithdrawalRequests,
-    };
-  }
-
-  async listBankAccounts(userId: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    return this.prisma.groomerBankAccount.findMany({
-      where: { groomerId: groomer.id },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
-    });
-  }
-
-  async createBankAccount(
-    userId: string,
-    dto: CreateGroomerBankAccountDto,
-  ) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const existingCount = await this.prisma.groomerBankAccount.count({
-      where: { groomerId: groomer.id },
-    });
-
-    return this.prisma.$transaction(async (tx) => {
-      const makeDefault = dto.isDefault || existingCount === 0;
-      if (makeDefault) {
-        await tx.groomerBankAccount.updateMany({
-          where: { groomerId: groomer.id },
-          data: { isDefault: false },
-        });
-      }
-
-      return tx.groomerBankAccount.create({
-        data: {
-          groomerId: groomer.id,
-          accountHolderName: dto.accountHolderName,
-          bankName: dto.bankName,
-          accountNumber: dto.accountNumber,
-          branchName: dto.branchName,
-          routingNumber: dto.routingNumber,
-          mobileBankingType: dto.mobileBankingType,
-          isDefault: makeDefault,
-        },
-      });
-    });
-  }
-
-  async updateBankAccount(
-    userId: string,
-    id: string,
-    dto: UpdateGroomerBankAccountDto,
-  ) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    await this.assertBankAccountOwner(groomer.id, id);
-
-    return this.prisma.$transaction(async (tx) => {
-      if (dto.isDefault) {
-        await tx.groomerBankAccount.updateMany({
-          where: { groomerId: groomer.id },
-          data: { isDefault: false },
-        });
-      }
-
-      return tx.groomerBankAccount.update({
-        where: { id },
-        data: {
-          ...(dto.accountHolderName && {
-            accountHolderName: dto.accountHolderName,
-          }),
-          ...(dto.bankName && { bankName: dto.bankName }),
-          ...(dto.accountNumber && { accountNumber: dto.accountNumber }),
-          ...(dto.branchName !== undefined && { branchName: dto.branchName }),
-          ...(dto.routingNumber !== undefined && {
-            routingNumber: dto.routingNumber,
-          }),
-          ...(dto.mobileBankingType !== undefined && {
-            mobileBankingType: dto.mobileBankingType,
-          }),
-          ...(dto.isDefault !== undefined && { isDefault: dto.isDefault }),
-        },
-      });
-    });
-  }
-
-  async deleteBankAccount(userId: string, id: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const bankAccount = await this.prisma.groomerBankAccount.findFirst({
-      where: { id, groomerId: groomer.id },
-    });
-    if (!bankAccount) throw new NotFoundException('Bank account not found');
-
-    const openRequestCount = await this.prisma.withdrawalRequest.count({
-      where: {
-        bankAccountId: id,
-        status: { in: ['REQUESTED', 'APPROVED'] },
-      },
-    });
-    if (openRequestCount > 0) {
-      throw new BadRequestException(
-        'Cannot delete a bank account with pending withdrawal requests',
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.groomerBankAccount.delete({ where: { id } });
-
-      if (bankAccount.isDefault) {
-        const fallbackAccount = await tx.groomerBankAccount.findFirst({
-          where: { groomerId: groomer.id },
-          orderBy: { createdAt: 'desc' },
-        });
-        if (fallbackAccount) {
-          await tx.groomerBankAccount.update({
-            where: { id: fallbackAccount.id },
-            data: { isDefault: true },
-          });
-        }
-      }
-
-      return { deleted: true };
-    });
-  }
-
-  async setDefaultBankAccount(userId: string, id: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    await this.assertBankAccountOwner(groomer.id, id);
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.groomerBankAccount.updateMany({
-        where: { groomerId: groomer.id },
-        data: { isDefault: false },
-      });
-      return tx.groomerBankAccount.update({
-        where: { id },
-        data: { isDefault: true },
-      });
-    });
-  }
-
-  async listMyWithdrawalRequests(
-    userId: string,
-    dto: WithdrawalRequestQueryDto,
-  ) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const where: any = {
-      groomerId: groomer.id,
-      ...(dto.status && { status: dto.status }),
-    };
-    const [items, total] = await Promise.all([
-      this.prisma.withdrawalRequest.findMany({
-        where,
-        ...paginate(dto.page, dto.limit),
-        orderBy: { [dto.sortBy]: dto.sortOrder },
-        include: withdrawalRequestInclude,
-      }),
-      this.prisma.withdrawalRequest.count({ where }),
-    ]);
-    return paginated(items, total, dto.page, dto.limit);
-  }
-
-  async createWithdrawalRequest(
-    userId: string,
-    dto: CreateWithdrawalRequestDto,
-  ) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const amountRequested = this.toAmount(dto.amount);
-    if (amountRequested <= 0) {
-      throw new BadRequestException(
-        'Withdrawal request amount must be greater than zero',
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const bankAccount = await tx.groomerBankAccount.findFirst({
-        where: {
-          id: dto.bankAccountId,
-          groomerId: groomer.id,
-        },
-      });
-      if (!bankAccount) {
-        throw new NotFoundException('Bank account not found');
-      }
-
-      const allocations = await this.buildWithdrawalAllocations(
-        tx,
-        groomer.id,
-        amountRequested,
-      );
-      if (allocations.length === 0) {
-        throw new BadRequestException(
-          'No completed earnings are available for withdrawal',
-        );
-      }
-
-      const request = await tx.withdrawalRequest.create({
-        data: {
-          groomerId: groomer.id,
-          bankAccountId: bankAccount.id,
-          amountRequested,
-          currency: allocations[0]?.currency ?? 'usd',
-          items: {
-            create: allocations.map((allocation) => ({
-              payoutId: allocation.payoutId,
-              allocatedAmount: allocation.allocatedAmount,
-            })),
-          },
-        },
-        include: withdrawalRequestInclude,
-      });
-
-      return request;
-    });
-  }
-
-  async cancelWithdrawalRequest(userId: string, id: string) {
-    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
-      where: { userId },
-    });
-    const request = await this.prisma.withdrawalRequest.findFirst({
-      where: {
-        id,
-        groomerId: groomer.id,
-      },
-    });
-    if (!request) throw new NotFoundException('Withdrawal request not found');
-    if (request.status !== 'REQUESTED') {
-      throw new BadRequestException(
-        'Only requested withdrawals can be cancelled',
-      );
-    }
-    return this.prisma.withdrawalRequest.update({
-      where: { id },
-      data: {
-        status: 'CANCELLED',
-        reviewedAt: new Date(),
-      },
-      include: withdrawalRequestInclude,
-    });
-  }
-
-  async listWithdrawalRequests(dto: WithdrawalRequestQueryDto) {
-    const where: any = {
-      ...(dto.status && { status: dto.status }),
-      ...(dto.groomerId && { groomerId: dto.groomerId }),
-    };
-    const [items, total] = await Promise.all([
-      this.prisma.withdrawalRequest.findMany({
-        where,
-        ...paginate(dto.page, dto.limit),
-        orderBy: { [dto.sortBy]: dto.sortOrder },
-        include: withdrawalRequestInclude,
-      }),
-      this.prisma.withdrawalRequest.count({ where }),
-    ]);
-    return paginated(items, total, dto.page, dto.limit);
-  }
-
-  async approveWithdrawalRequest(
-    adminId: string,
-    id: string,
-    dto: AdminApproveWithdrawalRequestDto,
-  ) {
-    const request = await this.prisma.withdrawalRequest.findUnique({
-      where: { id },
-      include: withdrawalRequestInclude,
-    });
-    if (!request) throw new NotFoundException('Withdrawal request not found');
-    if (request.status !== 'REQUESTED') {
-      throw new BadRequestException(
-        'Only requested withdrawals can be approved',
-      );
-    }
-
-    const updated = await this.prisma.withdrawalRequest.update({
-      where: { id },
-      data: {
-        status: 'APPROVED',
-        adminNote: dto.note,
-        reviewedAt: new Date(),
-      },
-      include: withdrawalRequestInclude,
-    });
-    await this.prisma.adminActionLog.create({
-      data: {
-        adminId,
-        targetUserId: updated.groomer.userId,
-        action: 'WITHDRAWAL_REQUEST_APPROVED',
-        note: dto.note,
-      },
-    });
-    await this.notifications.create(
-      updated.groomer.userId,
-      'ADMIN_ACTION',
-      'Withdrawal request approved',
-      'Your withdrawal request has been approved and is awaiting payment.',
-      { withdrawalRequestId: updated.id },
-    );
-    return updated;
-  }
-
-  async rejectWithdrawalRequest(
-    adminId: string,
-    id: string,
-    dto: AdminRejectWithdrawalRequestDto,
-  ) {
-    const request = await this.prisma.withdrawalRequest.findUnique({
-      where: { id },
-      include: withdrawalRequestInclude,
-    });
-    if (!request) throw new NotFoundException('Withdrawal request not found');
-    if (!['REQUESTED', 'APPROVED'].includes(request.status)) {
-      throw new BadRequestException(
-        'Only open withdrawal requests can be rejected',
-      );
-    }
-
-    const updated = await this.prisma.withdrawalRequest.update({
-      where: { id },
-      data: {
-        status: 'REJECTED',
-        adminNote: dto.reason,
-        reviewedAt: new Date(),
-      },
-      include: withdrawalRequestInclude,
-    });
-    await this.prisma.adminActionLog.create({
-      data: {
-        adminId,
-        targetUserId: updated.groomer.userId,
-        action: 'WITHDRAWAL_REQUEST_REJECTED',
-        note: dto.reason,
-      },
-    });
-    await this.notifications.create(
-      updated.groomer.userId,
-      'ADMIN_ACTION',
-      'Withdrawal request rejected',
-      dto.reason,
-      { withdrawalRequestId: updated.id },
-    );
-    return updated;
-  }
-
-  async markWithdrawalRequestPaid(
-    adminId: string,
-    id: string,
-    dto: AdminMarkWithdrawalPaidDto,
-  ) {
-    const request = await this.prisma.withdrawalRequest.findUnique({
-      where: { id },
-      include: withdrawalRequestInclude,
-    });
-    if (!request) throw new NotFoundException('Withdrawal request not found');
-    if (!['REQUESTED', 'APPROVED'].includes(request.status)) {
-      throw new BadRequestException(
-        'Only open withdrawal requests can be marked paid',
-      );
-    }
-
-    const updated = await this.prisma.withdrawalRequest.update({
-      where: { id },
-      data: {
-        status: 'PAID',
-        amountPaid: request.amountRequested,
-        transferReference: dto.transferReference,
-        adminNote: dto.note,
-        reviewedAt: request.reviewedAt ?? new Date(),
-        paidAt: new Date(),
-      },
-      include: withdrawalRequestInclude,
-    });
-    await this.prisma.adminActionLog.create({
-      data: {
-        adminId,
-        targetUserId: updated.groomer.userId,
-        action: 'WITHDRAWAL_REQUEST_PAID',
-        note: dto.note ?? dto.transferReference,
-      },
-    });
-    await this.notifications.create(
-      updated.groomer.userId,
-      'ADMIN_ACTION',
-      'Withdrawal request paid',
-      'Your withdrawal has been marked as paid by the admin.',
-      {
-        withdrawalRequestId: updated.id,
-        transferReference: updated.transferReference,
-      },
-    );
-    return updated;
-  }
-
-  private async getBalanceSummary(groomerId: string) {
-    const [earned, pending, paid] = await Promise.all([
-      this.prisma.payout.aggregate({
-        where: { groomerId },
-        _sum: { amount: true },
-      }),
-      this.prisma.withdrawalRequest.aggregate({
-        where: {
-          groomerId,
-          status: { in: PENDING_WITHDRAWAL_REQUEST_STATUSES as any },
-        },
-        _sum: { amountRequested: true },
-      }),
-      this.prisma.withdrawalRequest.aggregate({
-        where: {
-          groomerId,
-          status: 'PAID',
-        },
-        _sum: { amountPaid: true },
-      }),
-    ]);
-
     const totalEarned = Number(earned._sum.amount ?? 0);
-    const pendingWithdrawal = Number(pending._sum.amountRequested ?? 0);
-    const paidOutTotal = Number(paid._sum.amountPaid ?? 0);
-    const availableBalance = Number(
-      (totalEarned - pendingWithdrawal - paidOutTotal).toFixed(2),
-    );
+    const pendingTransfer = Number(pending._sum.amount ?? 0);
+    const transferredTotal = Number(transferred._sum.amount ?? 0);
+    const failedTransferTotal = Number(failed._sum.amount ?? 0);
 
     return {
       totalEarned,
-      availableBalance,
-      pendingWithdrawal,
-      paidOutTotal,
+      availableBalance: Number((pendingTransfer + failedTransferTotal).toFixed(2)),
+      pendingWithdrawal: pendingTransfer,
+      paidOutTotal: transferredTotal,
+      pendingTransferTotal: pendingTransfer,
+      transferredTotal,
+      failedTransferTotal,
+      thisWeekIncome: week._sum.amount ?? 0,
+      thisMonthIncome: month._sum.amount ?? 0,
+      recentEarnings,
+      connectStatus: this.mapConnectStatus(groomer),
     };
   }
 
-  private async assertBankAccountOwner(groomerId: string, bankAccountId: string) {
-    const bankAccount = await this.prisma.groomerBankAccount.findFirst({
-      where: {
-        id: bankAccountId,
-        groomerId,
-      },
+  async connectStatus(userId: string) {
+    let groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
     });
-    if (!bankAccount) throw new NotFoundException('Bank account not found');
-    return bankAccount;
+    if (groomer.stripeConnectedAccountId) {
+      try {
+        const account = await this.stripe.accounts.retrieve(
+          groomer.stripeConnectedAccountId,
+        );
+        groomer =
+          (await this.handleConnectedAccountUpdated(account)) ?? groomer;
+      } catch (error) {
+        this.logger.warn(
+          `Failed to refresh Stripe Connect status for groomer ${groomer.id}: ${this.getStripeErrorMessage(
+            error,
+          )}`,
+        );
+      }
+    }
+    return this.mapConnectStatus(groomer);
   }
 
-  private async buildWithdrawalAllocations(
-    tx: any,
-    groomerId: string,
-    requestedAmount: number,
-  ) {
-    const payouts = await tx.payout.findMany({
-      where: { groomerId },
+  async createOnboardingLink(userId: string) {
+    const groomer = await this.prisma.groomerProfile.findUnique({
+      where: { userId },
+      include: { user: true },
+    });
+    if (!groomer) {
+      throw new NotFoundException('Groomer profile not found');
+    }
+    if (groomer.approvalStatus !== 'APPROVED') {
+      throw new BadRequestException(
+        'Admin approval is required before Stripe onboarding can start',
+      );
+    }
+
+    const accountId = await this.ensureConnectedAccount(groomer);
+    let link: any;
+    try {
+      link = await this.stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: this.resolveConnectUrl(
+          'STRIPE_CONNECT_REFRESH_URL',
+          '/groomer/connect/refresh',
+        ),
+        return_url: this.resolveConnectUrl(
+          'STRIPE_CONNECT_RETURN_URL',
+          '/groomer/connect/return',
+        ),
+        type: 'account_onboarding',
+        collection_options: {
+          fields: 'currently_due',
+        },
+      });
+    } catch (error) {
+      throw this.wrapStripeError('create Stripe onboarding link', error);
+    }
+
+    await this.prisma.groomerProfile.update({
+      where: { id: groomer.id },
+      data: {
+        stripeOnboardingStartedAt:
+          groomer.stripeOnboardingStartedAt ?? new Date(),
+      },
+    });
+
+    return {
+      url: link.url,
+      expiresAt: link.expires_at
+        ? new Date(link.expires_at * 1000).toISOString()
+        : null,
+      accountId,
+    };
+  }
+
+  async createDashboardLink(userId: string) {
+    const groomer = await this.prisma.groomerProfile.findUniqueOrThrow({
+      where: { userId },
+    });
+    if (!groomer.stripeConnectedAccountId) {
+      throw new BadRequestException(
+        'Stripe Connect account is not set up yet. Generate the onboarding link first',
+      );
+    }
+
+    let link: any;
+    try {
+      await this.configureConnectedAccountPayoutSchedule(
+        groomer.stripeConnectedAccountId,
+      );
+      link = await this.stripe.accounts.createLoginLink(
+        groomer.stripeConnectedAccountId,
+      );
+    } catch (error) {
+      throw this.wrapStripeError('create Stripe dashboard login link', error);
+    }
+
+    return { url: link.url };
+  }
+
+  async handleConnectedAccountUpdated(account: any) {
+    const groomer = await this.prisma.groomerProfile.findFirst({
+      where: {
+        stripeConnectedAccountId: String(account.id),
+      },
+    });
+    if (!groomer) {
+      return null;
+    }
+
+    const wasReady = this.isConnectReady(groomer);
+    const updated = await this.prisma.groomerProfile.update({
+      where: { id: groomer.id },
+      data: {
+        stripeOnboardingCompleted: Boolean(account.details_submitted),
+        stripeTransfersEnabled:
+          account.capabilities?.transfers === 'active',
+        stripePayoutsEnabled: Boolean(account.payouts_enabled),
+        stripeOnboardingCompletedAt: account.details_submitted
+          ? groomer.stripeOnboardingCompletedAt ?? new Date()
+          : null,
+        stripeConnectCountry: account.country ?? groomer.stripeConnectCountry,
+        stripeConnectEmail: account.email ?? groomer.stripeConnectEmail,
+      },
+    });
+
+    const isReady = this.isConnectReady(updated);
+    if (isReady && !wasReady) {
+      const notification = renderNotificationTemplate(
+        'GROOMER_STRIPE_SETUP_COMPLETE',
+      );
+      await this.notifications.create(
+        groomer.userId,
+        'ADMIN_ACTION',
+        notification.title,
+        notification.body,
+        {
+          targetScreen: 'earnings',
+          connectedAccountId: updated.stripeConnectedAccountId,
+        },
+      );
+      await this.releasePendingPayoutsForGroomer(updated.id);
+    }
+
+    return updated;
+  }
+
+  async releasePendingPayoutsForGroomer(groomerId: string) {
+    const pendingPayouts = await this.prisma.payout.findMany({
+      where: {
+        groomerId,
+        status: { in: ['PENDING', 'FAILED'] },
+      },
+      select: { bookingId: true },
       orderBy: { createdAt: 'asc' },
-      include: {
-        withdrawalItems: {
-          include: {
-            withdrawalRequest: {
-              select: {
-                status: true,
-              },
-            },
+    });
+
+    for (const payout of pendingPayouts) {
+      try {
+        await this.releaseForBooking(payout.bookingId);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to retry payout for booking ${payout.bookingId}: ${this.getStripeErrorMessage(
+            error,
+          )}`,
+        );
+      }
+    }
+  }
+
+  assertGroomerPayoutSetupComplete(groomer: {
+    stripeConnectedAccountId?: string | null;
+    stripeOnboardingCompleted?: boolean | null;
+    stripeTransfersEnabled?: boolean | null;
+    stripePayoutsEnabled?: boolean | null;
+  }) {
+    if (!groomer.stripeConnectedAccountId) {
+      throw new BadRequestException(
+        'This groomer has not started Stripe Connect onboarding yet',
+      );
+    }
+    if (!groomer.stripeOnboardingCompleted) {
+      throw new BadRequestException(
+        'This groomer has not completed Stripe Connect onboarding yet',
+      );
+    }
+    if (!groomer.stripeTransfersEnabled) {
+      throw new BadRequestException(
+        'Stripe transfers are not enabled for this groomer yet. Check pending Stripe requirements and webhook sync',
+      );
+    }
+    if (!groomer.stripePayoutsEnabled) {
+      throw new BadRequestException(
+        'Stripe payouts are not enabled for this groomer yet. Finish payout setup in Stripe',
+      );
+    }
+  }
+
+  private async ensureConnectedAccount(groomer: any) {
+    if (groomer.stripeConnectedAccountId) {
+      await this.configureConnectedAccountPayoutSchedule(
+        groomer.stripeConnectedAccountId,
+      );
+      return groomer.stripeConnectedAccountId;
+    }
+
+    let account: any;
+    try {
+      account = await this.stripe.accounts.create({
+        type: 'express',
+        email: groomer.user.email,
+        business_type: 'individual',
+        business_profile: {
+          name: groomer.businessName || groomer.legalFullName,
+          product_description:
+            'Mobile pet grooming services provided by an individual groomer.',
+          mcc: '7299',
+        },
+        capabilities: {
+          transfers: {
+            requested: true,
           },
         },
+        ...this.buildConnectedAccountPayoutSettings(),
+        metadata: {
+          groomerProfileId: groomer.id,
+          userId: groomer.userId,
+        },
+      });
+    } catch (error) {
+      throw this.wrapStripeError('create Stripe Connect account', error);
+    }
+
+    await this.prisma.groomerProfile.update({
+      where: { id: groomer.id },
+      data: {
+        stripeConnectedAccountId: account.id,
+        stripeConnectCountry: account.country ?? null,
+        stripeConnectEmail: account.email ?? groomer.user.email,
+        stripeOnboardingStartedAt: new Date(),
       },
     });
 
-    let remaining = requestedAmount;
-    const allocations: Array<{
-      payoutId: string;
-      allocatedAmount: number;
-      currency: string;
-    }> = [];
-
-    for (const payout of payouts) {
-      const allocatedAlready = payout.withdrawalItems
-        .filter((item: any) =>
-          ACTIVE_WITHDRAWAL_REQUEST_STATUSES.includes(
-            item.withdrawalRequest.status,
-          ),
-        )
-        .reduce(
-          (sum: number, item: any) => sum + Number(item.allocatedAmount),
-          0,
-        );
-      const availableFromPayout = Number(payout.amount) - allocatedAlready;
-      if (availableFromPayout <= 0) continue;
-
-      const allocatedAmount = Number(
-        Math.min(availableFromPayout, remaining).toFixed(2),
-      );
-      allocations.push({
-        payoutId: payout.id,
-        allocatedAmount,
-        currency: payout.currency,
-      });
-      remaining = Number((remaining - allocatedAmount).toFixed(2));
-      if (remaining <= 0) break;
-    }
-
-    if (remaining > 0) {
-      throw new BadRequestException(
-        'Withdrawal amount exceeds available balance',
-      );
-    }
-
-    return allocations;
+    return account.id;
   }
 
-  private toAmount(value: number) {
-    return Number(Number(value).toFixed(2));
+  private async configureConnectedAccountPayoutSchedule(accountId: string) {
+    try {
+      await this.stripe.accounts.update(
+        accountId,
+        this.buildConnectedAccountPayoutSettings(),
+      );
+    } catch (error) {
+      throw this.wrapStripeError('configure Stripe payout schedule', error);
+    }
+  }
+
+  private buildConnectedAccountPayoutSettings() {
+    const interval = this.getPayoutInterval();
+    const schedule: Record<string, unknown> = { interval };
+
+    const delayDays = this.getPayoutDelayDays();
+    if (interval !== 'manual' && delayDays !== undefined) {
+      schedule.delay_days = delayDays;
+    }
+
+    if (interval === 'weekly') {
+      schedule.weekly_payout_days = [this.getWeeklyPayoutDay()];
+    }
+
+    if (interval === 'monthly') {
+      schedule.monthly_payout_days = [this.getMonthlyPayoutDay()];
+    }
+
+    return {
+      settings: {
+        payouts: {
+          schedule,
+        },
+      },
+    };
+  }
+
+  private getPayoutInterval(): StripePayoutInterval {
+    const interval = (
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_INTERVAL') || 'daily'
+    )
+      .trim()
+      .toLowerCase();
+    const allowed: StripePayoutInterval[] = [
+      'daily',
+      'weekly',
+      'monthly',
+      'manual',
+    ];
+    if (!allowed.includes(interval as StripePayoutInterval)) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_INTERVAL must be one of: daily, weekly, monthly, manual',
+      );
+    }
+    return interval as StripePayoutInterval;
+  }
+
+  private getPayoutDelayDays() {
+    const raw = this.config
+      .get<string>('STRIPE_CONNECT_PAYOUT_DELAY_DAYS')
+      ?.trim()
+      .toLowerCase();
+    if (!raw) return 'minimum';
+    if (raw === 'minimum') return raw;
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 31) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_DELAY_DAYS must be minimum or a number from 0 to 31',
+      );
+    }
+    return value;
+  }
+
+  private getWeeklyPayoutDay(): StripeWeeklyPayoutDay {
+    const day = (
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_WEEKLY_DAY') || 'friday'
+    )
+      .trim()
+      .toLowerCase();
+    const allowed: StripeWeeklyPayoutDay[] = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+    ];
+    if (!allowed.includes(day as StripeWeeklyPayoutDay)) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_WEEKLY_DAY must be one of: monday, tuesday, wednesday, thursday, friday',
+      );
+    }
+    return day as StripeWeeklyPayoutDay;
+  }
+
+  private getMonthlyPayoutDay() {
+    const raw =
+      this.config.get<string>('STRIPE_CONNECT_PAYOUT_MONTHLY_DAY') || '1';
+    const day = Number(raw);
+    if (!Number.isInteger(day) || day < 1 || day > 31) {
+      throw new BadRequestException(
+        'STRIPE_CONNECT_PAYOUT_MONTHLY_DAY must be a number from 1 to 31',
+      );
+    }
+    return day;
+  }
+
+  private isConnectReady(groomer: {
+    stripeConnectedAccountId?: string | null;
+    stripeOnboardingCompleted?: boolean | null;
+    stripeTransfersEnabled?: boolean | null;
+    stripePayoutsEnabled?: boolean | null;
+  }) {
+    return Boolean(
+      groomer.stripeConnectedAccountId &&
+        groomer.stripeOnboardingCompleted &&
+        groomer.stripeTransfersEnabled &&
+        groomer.stripePayoutsEnabled,
+    );
+  }
+
+  private mapConnectStatus(groomer: any) {
+    return {
+      connectedAccountId: groomer.stripeConnectedAccountId,
+      onboardingCompleted: groomer.stripeOnboardingCompleted,
+      transfersEnabled: groomer.stripeTransfersEnabled,
+      payoutsEnabled: groomer.stripePayoutsEnabled,
+      payoutSetupComplete: this.isConnectReady(groomer),
+      onboardingStartedAt: groomer.stripeOnboardingStartedAt,
+      onboardingCompletedAt: groomer.stripeOnboardingCompletedAt,
+      connectCountry: groomer.stripeConnectCountry,
+      connectEmail: groomer.stripeConnectEmail,
+      availableForBookings: groomer.availableForBookings,
+    };
+  }
+
+  private resolveConnectUrl(configKey: string, fallbackPath: string) {
+    const direct = this.config.get<string>(configKey)?.trim();
+    if (direct) {
+      return direct;
+    }
+
+    const baseUrl =
+      this.config.get<string>('PUBLIC_APP_URL')?.trim() ||
+      this.config.get<string>('FRONTEND_URL')?.trim();
+    if (!baseUrl) {
+      throw new BadRequestException(
+        `${configKey} is not configured for Stripe Connect onboarding`,
+      );
+    }
+
+    return new URL(fallbackPath, this.withTrailingSlash(baseUrl)).toString();
+  }
+
+  private withTrailingSlash(value: string) {
+    return value.endsWith('/') ? value : `${value}/`;
+  }
+
+  private getStripeErrorMessage(error: unknown) {
+    const stripeError = error as { message?: string };
+    return stripeError.message ?? 'Unknown Stripe error';
+  }
+
+  private wrapStripeError(action: string, error: unknown) {
+    const message = this.getStripeErrorMessage(error);
+    this.logger.error(
+      `Stripe failed to ${action}: ${message}`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    return new BadGatewayException(`Stripe failed to ${action}: ${message}`);
   }
 }

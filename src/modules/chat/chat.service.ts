@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 import { SendMessageDto, StartConversationDto } from './dto/chat.dto';
 @Injectable()
 export class ChatService {
@@ -95,15 +96,29 @@ export class ChatService {
       conversation.buyerId === userId
         ? conversation.groomerId
         : conversation.buyerId;
-    const notificationBody =
-      body ??
-      (dto.type === 'IMAGE' ? 'Sent an image' : 'Sent an attachment');
+    const [sender, recipient] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { fullName: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: recipientId },
+        select: { role: true },
+      }),
+    ]);
+    const notification = renderNotificationTemplate(
+      recipient?.role === 'BUYER' ? 'BUYER_NEW_MESSAGE' : 'GROOMER_NEW_MESSAGE',
+      {
+        GroomerName: sender?.fullName,
+        CustomerName: sender?.fullName,
+      },
+    );
     await this.notifications.create(
       recipientId,
       'NEW_MESSAGE',
-      'New message',
-      notificationBody,
-      { conversationId: conversation.id },
+      notification.title,
+      notification.body,
+      { targetScreen: 'chat', conversationId: conversation.id },
     );
     return { conversation, message, recipientId };
   }
