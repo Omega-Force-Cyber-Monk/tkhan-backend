@@ -80,7 +80,9 @@ export class BuyerService {
           { about: { contains: search, mode: 'insensitive' } },
           { user: { fullName: { contains: search, mode: 'insensitive' } } },
           { user: { email: { contains: search, mode: 'insensitive' } } },
-          { user: { streetAddress: { contains: search, mode: 'insensitive' } } },
+          {
+            user: { streetAddress: { contains: search, mode: 'insensitive' } },
+          },
           { user: { city: { contains: search, mode: 'insensitive' } } },
           { user: { province: { contains: search, mode: 'insensitive' } } },
           { user: { postalCode: { contains: search, mode: 'insensitive' } } },
@@ -135,10 +137,7 @@ export class BuyerService {
       items = await this.prisma.groomerProfile.findMany({
         where,
         ...paginate(page, limit),
-        orderBy: [
-          { availableForBookings: 'desc' },
-          { [sortBy]: sortOrder },
-        ],
+        orderBy: [{ availableForBookings: 'desc' }, { [sortBy]: sortOrder }],
         include: {
           user: true,
           services: { where: { active: true }, include: { category: true } },
@@ -239,16 +238,63 @@ export class BuyerService {
       throw new NotFoundException('Groomer not found');
     }
 
-    const favorite = buyerId
-      ? await this.prisma.buyerFavoriteGroomer.findUnique({
-          where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
-        })
-      : null;
+    const [favorite, ratingAgg, reviews] = await Promise.all([
+      buyerId
+        ? this.prisma.buyerFavoriteGroomer.findUnique({
+            where: { buyerId_groomerId: { buyerId, groomerId: groomer.id } },
+          })
+        : Promise.resolve(null),
+      this.prisma.review.aggregate({
+        where: {
+          revieweeId: groomer.userId,
+          targetType: 'GROOMER',
+        },
+        _avg: { rating: true },
+        _count: { _all: true },
+      }),
+      this.prisma.review.findMany({
+        where: {
+          revieweeId: groomer.userId,
+          targetType: 'GROOMER',
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          reviewer: {
+            select: {
+              id: true,
+              fullName: true,
+              profileImage: true,
+            },
+          },
+          booking: {
+            select: {
+              id: true,
+              bookingNumber: true,
+              completedAt: true,
+              beforeImage: true,
+              afterImage: true,
+              pet: {
+                select: {
+                  id: true,
+                  name: true,
+                  petType: true,
+                  petSize: true,
+                  petImage: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     return {
       ...groomer,
       isFavorite: Boolean(favorite),
       favoriteId: favorite?.id ?? null,
+      averageRating: ratingAgg._avg.rating ?? 0,
+      totalReviews: ratingAgg._count._all,
+      reviews,
     };
   }
 

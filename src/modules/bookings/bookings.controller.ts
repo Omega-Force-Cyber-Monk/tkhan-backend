@@ -5,11 +5,12 @@ import {
   Param,
   Patch,
   Post,
+  UploadedFile,
   Query,
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -47,10 +48,10 @@ const bookingExample = {
   status: 'PENDING',
   scheduledDate: '2026-05-11T00:00:00.000Z',
   subtotalAmount: '75.00',
-  serviceChargeAmount: '3.00',
+  serviceChargeAmount: '7.50',
   platformFeeAmount: '7.50',
-  groomerEarningAmount: '67.50',
-  totalAmount: '78.00',
+  groomerEarningAmount: '75.00',
+  totalAmount: '82.50',
   requestedAt: null,
   acceptedAt: null,
   rejectedAt: null,
@@ -144,6 +145,7 @@ const bookingExample = {
       businessName: 'Sarah Pet Spa',
       serviceArea: 'Austin',
       businessAddress: '44 Grooming Lane',
+      gstHstRegistrationNumber: '123456789RT0001',
       experienceYears: 5,
       shortBio: 'Gentle grooming for dogs and cats.',
       about: 'Certified groomer with in-home grooming experience.',
@@ -151,6 +153,10 @@ const bookingExample = {
       serviceModes: ['IN_HOME'],
       availableForBookings: true,
       approvalStatus: 'APPROVED',
+      stripeConnectedAccountId: 'acct_1234567890',
+      stripeOnboardingCompleted: true,
+      stripeTransfersEnabled: true,
+      stripePayoutsEnabled: true,
     },
   },
 };
@@ -169,16 +175,18 @@ const bookingDetailExample = {
   ...bookingExample,
   earnings: {
     subtotalAmount: '75.00',
-    serviceChargeAmount: '3.00',
+    serviceChargeAmount: '7.50',
     platformFeeAmount: '7.50',
-    groomerEarningAmount: '67.50',
-    totalAmount: '78.00',
+    groomerEarningAmount: '75.00',
+    totalAmount: '82.50',
     payoutId: 'payout-uuid',
     payoutStatus: 'PENDING',
     payoutPaidOutAt: null,
     payoutReservedAmount: '0.00',
     payoutPaidAmount: '0.00',
-    payoutAvailableAmount: '67.50',
+    payoutAvailableAmount: '75.00',
+    payoutTransferredAt: null,
+    payoutFailureReason: null,
   },
 };
 
@@ -259,24 +267,56 @@ export class BookingsController {
   ) {
     return this.bookingsService.reject(user.sub, id, dto);
   }
-  @Roles('GROOMER') @Patch(':id/in-progress') markInProgress(
+  @Roles('GROOMER')
+  @Patch(':id/in-progress')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        beforeImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('beforeImage'))
+  async markInProgress(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.bookingsService.markInProgress(user.sub, id);
+    const beforeImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
+    return this.bookingsService.markInProgress(user.sub, id, beforeImage);
   }
-  @Roles('GROOMER') @Patch(':id/request-completion') requestCompletion(
+
+  @Roles('GROOMER')
+  @Patch(':id/request-completion')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        note: { type: 'string' },
+        afterImage: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('afterImage'))
+  async requestCompletion(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: CompletionRequestDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.bookingsService.requestCompletion(user.sub, id, dto);
+    const afterImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
+    return this.bookingsService.requestCompletion(user.sub, id, dto, afterImage);
   }
-  @Roles('BUYER') @Patch(':id/approve-completion') approveCompletion(
+  @Roles('BUYER', 'ADMIN')
+  @Patch(':id/approve-completion')
+  approveCompletion(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
   ) {
-    return this.bookingsService.approveCompletion(user.sub, id);
+    return this.bookingsService.approveCompletion(user.sub, user.role, id);
   }
   @Roles('GROOMER')
   @Patch(':id/images')

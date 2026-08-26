@@ -7,17 +7,27 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import 'dotenv/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
-  const allowedOrigins = (
-    process.env.CORS_ORIGINS ??
-    'http://localhost:5173,http://localhost:3000,http://localhost:5174,https://idyllic-fenglisu-b9c4a3.netlify.app'
-  )
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+  const allowedOrigins = new Set([
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:5174',
+    'https://idyllic-fenglisu-b9c4a3.netlify.app',
+    'https://meek-babka-066a5b.netlify.app/',
+  ]);
+  for (const envKey of [
+    'RENDER_EXTERNAL_URL',
+    'PUBLIC_APP_URL',
+    'APP_URL',
+    'API_URL',
+  ]) {
+    const value = process.env[envKey]?.trim();
+    if (value) {
+      allowedOrigins.add(value);
+    }
+  }
   const tryCloudflarePattern = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i;
 
   app.setGlobalPrefix('api/v1');
@@ -25,7 +35,7 @@ async function bootstrap() {
     origin: (origin, callback) => {
       if (
         !origin ||
-        allowedOrigins.includes(origin) ||
+        allowedOrigins.has(origin) ||
         tryCloudflarePattern.test(origin)
       ) {
         return callback(null, true);

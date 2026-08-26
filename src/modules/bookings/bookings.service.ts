@@ -2,10 +2,13 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
 import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
+import { ReviewReminderService } from '../notifications/review-reminder.service';
 import { PaymentsService } from '../payments/payments.service';
 import { PayoutsService } from '../payouts/payouts.service';
 import {
@@ -41,6 +44,7 @@ const bookingGroomerSelect = {
       businessName: true,
       serviceArea: true,
       businessAddress: true,
+      gstHstRegistrationNumber: true,
       experienceYears: true,
       shortBio: true,
       about: true,
@@ -48,6 +52,10 @@ const bookingGroomerSelect = {
       serviceModes: true,
       availableForBookings: true,
       approvalStatus: true,
+      stripeConnectedAccountId: true,
+      stripeOnboardingCompleted: true,
+      stripeTransfersEnabled: true,
+      stripePayoutsEnabled: true,
     },
   },
 };
@@ -70,18 +78,6 @@ const bookingAvailabilitySlotInclude = {
 
 const bookingPayoutInclude = {
   orderBy: { createdAt: 'desc' as const },
-  include: {
-    withdrawalItems: {
-      include: {
-        withdrawalRequest: {
-          select: {
-            status: true,
-            paidAt: true,
-          },
-        },
-      },
-    },
-  },
 };
 
 @Injectable()
@@ -91,39 +87,86 @@ export class BookingsService {
     private readonly notifications: NotificationsService,
     private readonly payments: PaymentsService,
     private readonly payouts: PayoutsService,
+    private readonly reviewReminders: ReviewReminderService,
   ) {}
 
   async create(buyerId: string, dto: CreateBookingDto) {
     return this.prisma.$transaction(async (tx) => {
-      const pet = await tx.pet.findUniqueOrThrow({ where: { id: dto.petId } });
-      const groomer = await tx.groomerProfile.findUniqueOrThrow({
+      const pet = await tx.pet.findUnique({ where: { id: dto.petId } });
+      if (!pet) {
+        throw new NotFoundException('Selected pet was not found');
+      }
+
+      const groomer = await tx.groomerProfile.findUnique({
         where: { id: dto.groomerId },
         include: { user: true },
       });
-      const service = await tx.service.findUniqueOrThrow({
+      if (!groomer) {
+        throw new NotFoundException('Selected groomer was not found');
+      }
+
+      const service = await tx.service.findUnique({
         where: { id: dto.serviceId },
         include: { category: true, addonMappings: true },
       });
-      const slot = await tx.groomerAvailabilitySlot.findUniqueOrThrow({
+      if (!service) {
+        throw new NotFoundException('Selected service was not found');
+      }
+
+      const slot = await tx.groomerAvailabilitySlot.findUnique({
         where: { id: dto.availabilitySlotId },
         include: { availability: true },
       });
-      if (pet.buyerId !== buyerId)
-        throw new ForbiddenException('Pet belongs to another buyer');
-      if (
-        groomer.approvalStatus !== 'APPROVED' ||
-        !groomer.availableForBookings ||
-        groomer.user.isBlocked
-      )
-        throw new BadRequestException('Groomer is not available for bookings');
-      if (service.groomerId !== groomer.id || !service.active)
-        throw new BadRequestException('Invalid service for groomer');
-      if (
-        slot.isBooked ||
-        !slot.availability.isAvailable ||
-        slot.availability.groomerId !== groomer.id
-      )
-        throw new BadRequestException('Selected slot is not available');
+      if (!slot) {
+        throw new NotFoundException('Selected availability slot was not found');
+      }
+
+      if (pet.buyerId !== buyerId) {
+        throw new ForbiddenException(
+          'You can only create a booking with a pet from your own account',
+        );
+      }
+      if (groomer.user.isBlocked) {
+        throw new BadRequestException(
+          'This groomer account is blocked and cannot receive bookings',
+        );
+      }
+      if (groomer.approvalStatus !== 'APPROVED') {
+        throw new BadRequestException(
+          'This groomer is still waiting for admin approval',
+        );
+      }
+      if (!groomer.availableForBookings) {
+        throw new BadRequestException(
+          'This groomer has currently disabled booking availability',
+        );
+      }
+      this.payouts.assertGroomerPayoutSetupComplete(groomer);
+      if (service.groomerId !== groomer.id) {
+        throw new BadRequestException(
+          'Selected service does not belong to this groomer',
+        );
+      }
+      if (!service.active) {
+        throw new BadRequestException(
+          'Selected service is currently inactive',
+        );
+      }
+      if (slot.availability.groomerId !== groomer.id) {
+        throw new BadRequestException(
+          'Selected availability slot does not belong to this groomer',
+        );
+      }
+      if (!slot.availability.isAvailable) {
+        throw new BadRequestException(
+          'Selected availability date is currently unavailable',
+        );
+      }
+      if (slot.isBooked) {
+        throw new BadRequestException(
+          'Selected availability slot has already been booked',
+        );
+      }
       const addons = dto.addonIds?.length
         ? await tx.serviceAddon.findMany({
             where: {
@@ -134,17 +177,23 @@ export class BookingsService {
             },
           })
         : [];
-      if ((dto.addonIds?.length ?? 0) !== addons.length)
-        throw new BadRequestException('One or more add-ons are invalid');
+      if ((dto.addonIds?.length ?? 0) !== addons.length) {
+        throw new BadRequestException(
+          'One or more selected add-ons are invalid for this service',
+        );
+      }
       const pricing = await tx.platformSetting.findUnique({
         where: { id: 'platform' },
       });
       const subtotal =
         Number(service.price) +
         addons.reduce((sum, addon) => sum + Number(addon.price), 0);
-      const serviceCharge = Number(pricing?.serviceChargeAmount ?? 0);
-      const platformFee = Number((subtotal * 0.1).toFixed(2));
-      const groomerEarning = Number((subtotal - platformFee).toFixed(2));
+      const serviceChargePercent = Number(pricing?.serviceChargeAmount ?? 0);
+      const serviceCharge = Number(
+        ((subtotal * serviceChargePercent) / 100).toFixed(2),
+      );
+      const platformFee = serviceCharge;
+      const groomerEarning = Number(subtotal.toFixed(2));
       const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
       const booking = await tx.booking.create({
         data: {
@@ -261,6 +310,8 @@ export class BookingsService {
           buyer: { select: bookingBuyerSelect },
           groomer: { select: bookingGroomerSelect },
           payouts: bookingPayoutInclude,
+          payments: true,
+          reviews: true,
         },
       }),
       this.prisma.booking.count({ where }),
@@ -301,8 +352,16 @@ export class BookingsService {
     const latestPayout = booking.payouts?.[0] ?? null;
     const scheduledDate = booking.availabilitySlot?.availability?.date ?? null;
     const payoutSummary = this.summarizePayout(latestPayout);
+    const isReviewed =
+      Array.isArray(booking.reviews) &&
+      booking.reviews.some(
+        (review: any) =>
+          review.reviewerId === booking.buyerId &&
+          review.targetType === 'GROOMER',
+      );
     return {
       ...booking,
+      isReviewed,
       scheduledDate,
       earnings: {
         subtotalAmount: booking.subtotalAmount,
@@ -316,6 +375,8 @@ export class BookingsService {
         payoutReservedAmount: payoutSummary.reservedAmount,
         payoutPaidAmount: payoutSummary.paidAmount,
         payoutAvailableAmount: payoutSummary.availableAmount,
+        payoutTransferredAt: payoutSummary.transferredAt,
+        payoutFailureReason: payoutSummary.failureReason,
       },
     };
   }
@@ -328,54 +389,33 @@ export class BookingsService {
         reservedAmount: 0,
         paidAmount: 0,
         availableAmount: 0,
+        transferredAt: null,
+        failureReason: null,
       };
     }
-
-    const paidItems = payout.withdrawalItems.filter(
-      (item: any) => item.withdrawalRequest.status === 'PAID',
-    );
-    const reservedItems = payout.withdrawalItems.filter((item: any) =>
-      ['REQUESTED', 'APPROVED'].includes(item.withdrawalRequest.status),
-    );
-    const paidAmount = paidItems.reduce(
-      (sum: number, item: any) => sum + Number(item.allocatedAmount),
-      0,
-    );
-    const reservedAmount = reservedItems.reduce(
-      (sum: number, item: any) => sum + Number(item.allocatedAmount),
-      0,
-    );
-    const availableAmount = Number(
-      (Number(payout.amount) - paidAmount - reservedAmount).toFixed(2),
-    );
-    const latestPaidAt = paidItems
-      .map((item: any) => item.withdrawalRequest.paidAt)
-      .filter(Boolean)
-      .sort(
-        (a: Date, b: Date) =>
-          new Date(a).getTime() - new Date(b).getTime(),
-      )
-      .at(-1);
-
-    let status = 'PENDING';
-    if (availableAmount <= 0 && paidAmount >= Number(payout.amount)) {
-      status = 'PAID';
-    } else if (reservedAmount > 0 || paidAmount > 0) {
-      status = 'PROCESSING';
-    }
+    const amount = Number(payout.amount);
+    const isTransferred = ['TRANSFERRED', 'PAID_OUT'].includes(payout.status);
+    const availableAmount = isTransferred ? 0 : amount;
+    const paidAmount = isTransferred ? amount : 0;
 
     return {
-      status,
-      paidOutAt: latestPaidAt ?? null,
-      reservedAmount,
+      status: payout.status,
+      paidOutAt: payout.payoutPaidOutAt ?? null,
+      reservedAmount: 0,
       paidAmount,
       availableAmount,
+      transferredAt: payout.transferredAt ?? null,
+      failureReason: payout.failureReason ?? null,
     };
   }
 
   async accept(groomerId: string, id: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: {
+        groomer: true,
+        availabilitySlot: true,
+      },
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
@@ -398,12 +438,27 @@ export class BookingsService {
       where: { id },
       data: { status: 'ACCEPTED', acceptedAt: new Date() },
     });
+    const notification = renderNotificationTemplate('BUYER_BOOKING_CONFIRMED', {
+      GroomerName: booking.groomer.fullName,
+      Date: this.formatNotificationDate(booking.availabilitySlot?.startTime),
+      Time: this.formatNotificationTime(booking.availabilitySlot?.startTime),
+    });
     await this.notifications.create(
       updated.buyerId,
       'BOOKING_ACCEPTED',
-      'Booking accepted',
-      'Your groomer accepted the booking.',
-      { bookingId: id },
+      notification.title,
+      notification.body,
+      { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
     );
     return updated;
   }
@@ -411,12 +466,13 @@ export class BookingsService {
   async reject(groomerId: string, id: string, dto: BookingDecisionDto) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: { groomer: true },
     });
     if (booking.groomerId !== groomerId)
       throw new ForbiddenException('Booking belongs to another groomer');
     if (!['PENDING', 'REQUESTED'].includes(booking.status))
       throw new BadRequestException('Only pending bookings can be rejected');
-    await this.prisma.booking.update({
+    const updated = await this.prisma.booking.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -429,19 +485,55 @@ export class BookingsService {
         where: { id: booking.availabilitySlotId },
         data: { isBooked: false },
       });
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_BOOKING_DECLINED',
+      {
+        GroomerName: booking.groomer.fullName,
+      },
+    );
     await this.notifications.create(
       booking.buyerId,
       'BOOKING_REJECTED',
-      'Booking rejected',
-      dto.reason,
-      { bookingId: id },
+      buyerNotification.title,
+      buyerNotification.body,
+      { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [booking.buyerId, booking.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        reason: dto.reason,
+      },
+    );
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_BOOKING_REJECTED',
+    );
+    await this.notifications.createForAdmins(
+      'BOOKING_REJECTED',
+      adminNotification.title,
+      dto.reason ?? adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: booking.buyerId,
+        groomerId: booking.groomerId,
+      },
     );
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
-  async markInProgress(groomerId: string, id: string) {
+  async markInProgress(
+    groomerId: string,
+    id: string,
+    beforeImage?: string,
+  ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
+      include: { pet: true },
     });
     if (booking.groomerId !== groomerId) {
       throw new ForbiddenException('Booking belongs to another groomer');
@@ -453,14 +545,31 @@ export class BookingsService {
     }
     const updated = await this.prisma.booking.update({
       where: { id },
-      data: { status: 'IN_PROGRESS', inProgressAt: new Date() },
+      data: {
+        status: 'IN_PROGRESS',
+        inProgressAt: new Date(),
+        ...(beforeImage && { beforeImage }),
+      },
+    });
+    const notification = renderNotificationTemplate('BUYER_APPOINTMENT_STARTED', {
+      PetName: booking.pet.name,
     });
     await this.notifications.create(
       updated.buyerId,
       'BOOKING_ACCEPTED',
-      'Service in progress',
-      'Your groomer has started working on the booking.',
-      { bookingId: id },
+      notification.title,
+      notification.body,
+      { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
     );
     return updated;
   }
@@ -469,6 +578,7 @@ export class BookingsService {
     groomerId: string,
     id: string,
     dto: CompletionRequestDto,
+    afterImage?: string,
   ) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
@@ -485,23 +595,51 @@ export class BookingsService {
         status: 'COMPLETION_REQUESTED',
         completionRequestedAt: new Date(),
         completionNote: dto.note,
+        ...(afterImage && { afterImage }),
       },
     });
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_COMPLETION_REQUESTED',
+    );
     await this.notifications.create(
       updated.buyerId,
       'COMPLETION_REQUESTED',
-      'Completion requested',
-      'Please approve completion if the service is done.',
-      { bookingId: id },
+      buyerNotification.title,
+      buyerNotification.body,
+      { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
+    );
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_COMPLETION_REQUESTED',
+    );
+    await this.notifications.createForAdmins(
+      'COMPLETION_REQUESTED',
+      adminNotification.title,
+      adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+      },
     );
     return updated;
   }
 
-  async approveCompletion(buyerId: string, id: string) {
+  async approveCompletion(userId: string, role: string, id: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
     });
-    if (booking.buyerId !== buyerId)
+    if (role !== 'ADMIN' && booking.buyerId !== userId)
       throw new ForbiddenException('Booking belongs to another buyer');
     if (booking.status !== 'COMPLETION_REQUESTED')
       throw new BadRequestException(
@@ -520,14 +658,44 @@ export class BookingsService {
         data: { status: 'COMPLETED' },
       }),
     ]);
+    const groomerNotification = renderNotificationTemplate(
+      'GROOMER_BOOKING_COMPLETED',
+    );
     await this.notifications.create(
       updated.groomerId,
       'BOOKING_COMPLETED',
-      'Booking completed',
-      'The buyer approved completion.',
-      { bookingId: id },
+      groomerNotification.title,
+      groomerNotification.body,
+      { targetScreen: 'booking_details', bookingId: id },
+    );
+    this.notifications.emitBookingUpdated(
+      [updated.buyerId, updated.groomerId],
+      {
+        bookingId: updated.id,
+        status: updated.status,
+        updatedAt: updated.updatedAt,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        approvedByRole: role,
+        approvedById: userId,
+      },
     );
     await this.payouts.releaseForBooking(id);
+    const adminNotification = renderNotificationTemplate('ADMIN_BOOKING_COMPLETED');
+    await this.notifications.createForAdmins(
+      'BOOKING_COMPLETED',
+      adminNotification.title,
+      adminNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: id,
+        buyerId: updated.buyerId,
+        groomerId: updated.groomerId,
+        approvedByRole: role,
+        approvedById: userId,
+      },
+    );
+    await this.reviewReminders.sendReviewRequest(id);
     return updated;
   }
 
@@ -554,5 +722,25 @@ export class BookingsService {
       where: { id },
       data: updateData,
     });
+  }
+
+  private formatNotificationDate(value?: Date | null) {
+    if (!value) return undefined;
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    }).format(value);
+  }
+
+  private formatNotificationTime(value?: Date | null) {
+    if (!value) return undefined;
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'UTC',
+    }).format(value);
   }
 }

@@ -46,6 +46,31 @@ enum BookingStatus {
   REFUNDED
 }
 
+enum BookingReminderKind {
+  TWENTY_FOUR_HOURS
+  ONE_HOUR
+  REVIEW_REQUEST
+  REVIEW_REMINDER
+}
+
+enum BookingReminderRecipientRole {
+  BUYER
+  GROOMER
+}
+
+enum GroomerAvailabilityAlertKind {
+  NO_AVAILABILITY
+  RUNNING_LOW
+  CALENDAR_EXPIRING
+}
+
+enum BuyerGrowthAlertKind {
+  INACTIVE_USER
+  REPEAT_CUSTOMER
+  FAVORITE_GROOMER_OPENED_AVAILABILITY
+  LAST_MINUTE_AVAILABILITY
+}
+
 enum PaymentStatus {
   PAYMENT_PENDING
   PENDING
@@ -55,6 +80,14 @@ enum PaymentStatus {
   REFUNDED
   PARTIALLY_REFUNDED
   COMPLETED
+}
+
+enum PayoutStatus {
+  PENDING
+  TRANSFERRED
+  PAID_OUT
+  FAILED
+  REVERSED
 }
 
 enum ReviewTargetType {
@@ -77,7 +110,14 @@ enum NotificationType {
   COMPLETION_REQUESTED
   BOOKING_COMPLETED
   PAYMENT_SUCCESS
+  PAYMENT_FAILED
   PAYMENT_REFUND
+  PAYOUT_FAILED
+  REVIEW_CREATED
+  REVIEW_REQUEST
+  BOOKING_REMINDER
+  AVAILABILITY_ALERT
+  GROWTH_ALERT
   NEW_MESSAGE
   TICKET_REPLY
   ADMIN_ACTION
@@ -147,6 +187,7 @@ model User {
   reviewsReceived        Review[]               @relation("ReviewsReceived")
   chatMessages           ChatMessage[]          @relation("MessageSender")
   notifications          Notification[]
+  buyerGrowthAlerts      BuyerGrowthAlert[]     @relation("BuyerGrowthAlerts")
   pushDeviceTokens        PushDeviceToken[]
   tickets                SupportTicket[]        @relation("TicketRequester")
   ticketMessages         SupportTicketMessage[] @relation("TicketMessageSender")
@@ -169,6 +210,20 @@ model BuyerProfile {
   updatedAt DateTime @updatedAt
 }
 
+model BuyerGrowthAlert {
+  id             String               @id @default(uuid())
+  buyerId        String
+  buyer          User                 @relation("BuyerGrowthAlerts", fields: [buyerId], references: [id], onDelete: Cascade)
+  kind           BuyerGrowthAlertKind
+  contextId      String?
+  notificationId String?
+  sentAt         DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+
+  @@index([buyerId, kind, contextId, sentAt])
+  @@index([sentAt])
+}
+
 model GroomerProfile {
   id                     String                 @id @default(uuid())
   userId                 String                 @unique
@@ -180,6 +235,7 @@ model GroomerProfile {
   businessName           String
   serviceArea            String
   businessAddress        String
+  gstHstRegistrationNumber String?
   idFrontImage           String
   idBackImage            String
   selfieWithId           String?
@@ -187,6 +243,14 @@ model GroomerProfile {
   about                  String?
   certifications         Json                   @default("[]")
   serviceModes           String[]               @default([])
+  stripeConnectedAccountId String?              @unique
+  stripeOnboardingCompleted Boolean             @default(false)
+  stripeTransfersEnabled Boolean                @default(false)
+  stripePayoutsEnabled  Boolean                 @default(false)
+  stripeOnboardingStartedAt DateTime?
+  stripeOnboardingCompletedAt DateTime?
+  stripeConnectCountry   String?
+  stripeConnectEmail     String?
   availableForBookings   Boolean                @default(false)
   approvalStatus         GroomerApprovalStatus  @default(PENDING)
   rejectionReason        String?
@@ -195,6 +259,7 @@ model GroomerProfile {
   services               Service[]
   addons                 ServiceAddon[]
   availability           GroomerAvailability[]
+  availabilityAlerts     GroomerAvailabilityAlert[]
   favorites              BuyerFavoriteGroomer[] @relation("GroomerFavorites")
   bankAccounts           GroomerBankAccount[]
   payouts                Payout[]
@@ -203,6 +268,19 @@ model GroomerProfile {
   updatedAt              DateTime               @updatedAt
 
   @@index([approvalStatus, availableForBookings])
+}
+
+model GroomerAvailabilityAlert {
+  id             String                       @id @default(uuid())
+  groomerId      String
+  groomer        GroomerProfile               @relation(fields: [groomerId], references: [id], onDelete: Cascade)
+  kind           GroomerAvailabilityAlertKind
+  notificationId String?
+  sentAt         DateTime                     @default(now())
+  createdAt      DateTime                     @default(now())
+
+  @@index([groomerId, kind, sentAt])
+  @@index([sentAt])
 }
 
 model ServiceCategory {
@@ -363,6 +441,7 @@ model Booking {
   payments               Payment[]
   payouts                Payout[]
   reviews                Review[]
+  reminders              BookingReminder[]
   conversations          ChatConversation[]
   supportTickets         SupportTicket[]
   createdAt              DateTime                  @default(now())
@@ -372,6 +451,22 @@ model Booking {
   @@index([groomerId, status])
   @@index([availabilitySlotId])
   @@index([createdAt])
+}
+
+model BookingReminder {
+  id            String                       @id @default(uuid())
+  bookingId     String
+  booking       Booking                      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  kind          BookingReminderKind
+  recipientRole BookingReminderRecipientRole
+  recipientId   String
+  notificationId String?
+  sentAt        DateTime                     @default(now())
+  createdAt     DateTime                     @default(now())
+
+  @@unique([bookingId, kind, recipientRole])
+  @@index([recipientId])
+  @@index([sentAt])
 }
 
 model PlatformSetting {
@@ -417,6 +512,7 @@ model Payment {
   status                PaymentStatus @default(PAYMENT_PENDING)
   stripeCheckoutSessionId String?     @unique
   stripePaymentIntentId String?       @unique
+  stripeChargeId        String?       @unique
   stripeRefundId        String?
   failureReason         String?
   paidAt                DateTime?
@@ -436,6 +532,11 @@ model Payout {
   amount           Decimal                 @db.Decimal(10, 2)
   platformFee      Decimal                 @db.Decimal(10, 2)
   currency         String                  @default("usd")
+  status           PayoutStatus            @default(PENDING)
+  stripeTransferId String?                 @unique
+  transferredAt    DateTime?
+  payoutPaidOutAt  DateTime?
+  failureReason    String?
   withdrawalItems  WithdrawalRequestItem[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
@@ -450,6 +551,8 @@ model GroomerBankAccount {
   accountHolderName  String
   bankName           String
   accountNumber      String
+  transitNumber      String?
+  institutionNumber  String?
   branchName         String?
   routingNumber      String?
   mobileBankingType  String?
@@ -589,14 +692,19 @@ model SupportTicket {
 }
 
 model SupportTicketMessage {
-  id          String           @id @default(uuid())
-  ticketId    String
-  senderId    String?
-  ticket      SupportTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  sender      User?            @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
-  senderType  TicketSenderType
-  message     String
-  createdAt   DateTime         @default(now())
+  id              String           @id @default(uuid())
+  ticketId        String
+  senderId        String?
+  ticket          SupportTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender          User?            @relation("TicketMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  senderType      TicketSenderType
+  message         String
+  requesterReadAt DateTime?
+  adminReadAt     DateTime?
+  createdAt       DateTime         @default(now())
+
+  @@index([ticketId, requesterReadAt])
+  @@index([ticketId, adminReadAt])
 }
 
 model AdminActionLog {

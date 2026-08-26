@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   InternalServerErrorException,
   Injectable,
   UnauthorizedException,
@@ -12,6 +13,8 @@ import { randomBytes, randomInt } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { sanitizeUser } from '../../common/utils/sanitize-user';
 import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { renderNotificationTemplate } from '../notifications/notification-templates';
 import {
   ChangePasswordDto,
   ForgotPasswordDto,
@@ -30,6 +33,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly emailService: EmailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async registerBuyer(dto: RegisterBuyerDto) {
@@ -63,6 +67,9 @@ export class AuthService {
       );
     } catch (error) {
       await this.prisma.user.delete({ where: { id: user.id } });
+      if (error instanceof HttpException) {
+        throw error;
+      }
       const message =
         error instanceof Error &&
         'message' in error &&
@@ -109,6 +116,8 @@ export class AuthService {
             businessName: dto.businessName,
             serviceArea: dto.serviceArea,
             businessAddress: dto.businessAddress,
+            gstHstRegistrationNumber:
+              dto.gstHstRegistrationNumber?.trim() || undefined,
             idFrontImage: dto.idFrontImage,
             idBackImage: dto.idBackImage,
             selfieWithId: dto.selfieWithId,
@@ -120,6 +129,19 @@ export class AuthService {
       },
       include: { groomerProfile: true },
     });
+    const notification = renderNotificationTemplate('ADMIN_NEW_GROOMER', {
+      GroomerName: user.fullName,
+    });
+    await this.notifications.createForAdmins(
+      'ADMIN_ACTION',
+      notification.title,
+      notification.body,
+      {
+        targetScreen: 'groomer_approval',
+        groomerId: user.groomerProfile?.id,
+        userId: user.id,
+      },
+    );
     return {
       user: sanitizeUser(user),
       message: 'Groomer registration submitted for admin approval.',
@@ -135,12 +157,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     if (user.isBlocked) throw new ForbiddenException('Account is blocked');
     if (user.role === 'BUYER' && !user.emailVerified)
-      throw new ForbiddenException('Email verification required');
+      throw new ForbiddenException(
+        'Buyer email verification is required before login',
+      );
     if (
       user.role === 'GROOMER' &&
       user.groomerProfile?.approvalStatus !== 'APPROVED'
     )
-      throw new ForbiddenException('Groomer approval required before login');
+      throw new ForbiddenException(
+        'Admin approval is required before groomer login',
+      );
     if (user.status !== 'ACTIVE')
       throw new ForbiddenException('Account is not active');
     const tokens = await this.signTokens(user.id, user.email, user.role);
@@ -248,7 +274,9 @@ export class AuthService {
       where: { email: dto.email?.toLowerCase() || '' },
     });
     if (!user || user.role !== 'BUYER') {
-      throw new BadRequestException('Invalid email verification request');
+      throw new BadRequestException(
+        'Invalid buyer email verification request',
+      );
     }
     if (!user.emailVerificationToken) {
       throw new BadRequestException('Email already verified');
