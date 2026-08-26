@@ -9,14 +9,36 @@ export class GroomerService {
     private readonly payouts: PayoutsService,
   ) {}
   async updateProfile(userId: string, dto: UpdateGroomerProfileDto) {
-    const { fullName, phone, profileImage, ...profile } = dto;
+    const {
+      fullName,
+      phone,
+      profileImage,
+      streetAddress,
+      unitSuite,
+      city,
+      province,
+      postalCode,
+      ...profile
+    } = dto;
     if (profile.availableForBookings === true) {
       await this.assertCanEnableBookings(userId);
     }
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { fullName, phone, profileImage },
-    });
+    const userUpdateData: any = {};
+    if (fullName !== undefined) userUpdateData.fullName = fullName;
+    if (phone !== undefined) userUpdateData.phone = phone;
+    if (profileImage !== undefined) userUpdateData.profileImage = profileImage;
+    if (streetAddress !== undefined) userUpdateData.streetAddress = streetAddress;
+    if (unitSuite !== undefined) userUpdateData.unitSuite = unitSuite;
+    if (city !== undefined) userUpdateData.city = city;
+    if (province !== undefined) userUpdateData.province = province;
+    if (postalCode !== undefined) userUpdateData.postalCode = postalCode;
+
+    if (Object.keys(userUpdateData).length > 0) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: userUpdateData,
+      });
+    }
     return this.prisma.groomerProfile.update({
       where: { userId },
       data: profile as any,

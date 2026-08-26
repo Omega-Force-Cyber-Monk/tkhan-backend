@@ -310,6 +310,7 @@ export class BookingsService {
           buyer: { select: bookingBuyerSelect },
           groomer: { select: bookingGroomerSelect },
           payouts: bookingPayoutInclude,
+          payments: true,
           reviews: true,
         },
       }),
