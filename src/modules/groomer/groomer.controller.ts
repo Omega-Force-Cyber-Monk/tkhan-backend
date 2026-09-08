@@ -34,6 +34,45 @@ export class GroomerController {
       properties: {
         fullName: { type: 'string' },
         phone: { type: 'string' },
+        streetAddress: {
+          type: 'string',
+          example: '123 Main Street',
+          description: 'Groomer account/contact street address',
+        },
+        unitSuite: {
+          type: 'string',
+          example: 'Unit 4B',
+          description: 'Optional unit, suite, or apartment number',
+        },
+        city: {
+          type: 'string',
+          example: 'Toronto',
+          description: 'Groomer account/contact city',
+        },
+        province: {
+          type: 'string',
+          example: 'Ontario',
+          description: 'Groomer account/contact province or state',
+        },
+        postalCode: {
+          type: 'string',
+          example: 'M5V 2T6',
+          description: 'Groomer account/contact postal code',
+        },
+        businessName: {
+          type: 'string',
+          example: 'Karoot Grooming Studio',
+        },
+        businessAddress: {
+          type: 'string',
+          example: '44 Grooming Lane, Toronto, ON M5V 2T6',
+          description: 'Studio/drop-off location shown to buyers',
+        },
+        serviceArea: {
+          type: 'string',
+          example: 'Toronto',
+          description: 'Area where this groomer provides services',
+        },
         shortBio: { type: 'string' },
         about: { type: 'string' },
         certifications: {
