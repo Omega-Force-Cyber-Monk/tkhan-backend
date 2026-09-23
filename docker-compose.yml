@@ -21,6 +21,7 @@ services:
     image: softvence/tkhan-backend:latest
     build: .
     container_name: tkhan-app
+    platform: linux/amd64
     restart: unless-stopped
     depends_on:
       postgres:
