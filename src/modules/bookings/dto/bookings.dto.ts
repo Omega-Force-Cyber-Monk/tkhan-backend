@@ -57,7 +57,12 @@ export class CreateBookingDto {
   @ApiProperty() @IsString() availabilitySlotId: string;
   @ApiProperty() @IsString() petId: string;
   @ApiProperty() @IsString() serviceLocation: string;
-  @ApiProperty() @IsString() addressLine: string;
+  @ApiPropertyOptional({
+    description: 'Required only when serviceLocation is At-Home Grooming',
+  })
+  @IsOptional()
+  @IsString()
+  addressLine?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() state?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;

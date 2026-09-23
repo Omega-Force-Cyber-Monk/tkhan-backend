@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
+import { sanitizePublicGroomer } from '../../common/utils/privacy';
 import { GroomerSearchDto } from './dto/buyer.dto';
 @Injectable()
 export class BuyerService {
@@ -187,7 +188,7 @@ export class BuyerService {
       const prices = g.services.map((s) => Number(s.price));
       const favorite = favoritesByGroomerId.get(g.id);
       return {
-        ...g,
+        ...sanitizePublicGroomer(g),
         isFavorite: Boolean(favorite),
         favoriteId: favorite?.id ?? null,
         averageRating: ratingByUserId.get(g.userId) ?? 0,
@@ -289,7 +290,7 @@ export class BuyerService {
     ]);
 
     return {
-      ...groomer,
+      ...sanitizePublicGroomer(groomer),
       isFavorite: Boolean(favorite),
       favoriteId: favorite?.id ?? null,
       averageRating: ratingAgg._avg.rating ?? 0,

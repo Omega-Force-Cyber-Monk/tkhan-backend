@@ -12,6 +12,7 @@ export class GroomerService {
     const {
       fullName,
       phone,
+      sharePhoneWithBookingPartners,
       profileImage,
       streetAddress,
       unitSuite,
@@ -24,10 +25,25 @@ export class GroomerService {
       await this.assertCanEnableBookings(userId);
     }
     const userUpdateData: any = {};
+    const existingUser =
+      phone !== undefined || sharePhoneWithBookingPartners !== undefined
+        ? await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { phone: true },
+          })
+        : null;
+    const nextPhone = phone !== undefined ? phone : existingUser?.phone;
     if (fullName !== undefined) userUpdateData.fullName = fullName;
     if (phone !== undefined) userUpdateData.phone = phone;
+    if (sharePhoneWithBookingPartners !== undefined) {
+      userUpdateData.sharePhoneWithBookingPartners =
+        Boolean(nextPhone?.trim()) && sharePhoneWithBookingPartners;
+    } else if (phone !== undefined && !nextPhone?.trim()) {
+      userUpdateData.sharePhoneWithBookingPartners = false;
+    }
     if (profileImage !== undefined) userUpdateData.profileImage = profileImage;
-    if (streetAddress !== undefined) userUpdateData.streetAddress = streetAddress;
+    if (streetAddress !== undefined)
+      userUpdateData.streetAddress = streetAddress;
     if (unitSuite !== undefined) userUpdateData.unitSuite = unitSuite;
     if (city !== undefined) userUpdateData.city = city;
     if (province !== undefined) userUpdateData.province = province;
@@ -45,7 +61,10 @@ export class GroomerService {
       include: { user: true },
     });
   }
-  async toggleBookingAvailability(userId: string, availableForBookings: boolean) {
+  async toggleBookingAvailability(
+    userId: string,
+    availableForBookings: boolean,
+  ) {
     if (availableForBookings) {
       await this.assertCanEnableBookings(userId);
     }
