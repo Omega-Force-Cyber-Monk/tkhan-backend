@@ -16,6 +16,7 @@ async function bootstrap() {
     'http://localhost:5174',
     'https://idyllic-fenglisu-b9c4a3.netlify.app',
     'https://meek-babka-066a5b.netlify.app/',
+    'https://tkhan.duckdns.org',
   ]);
   for (const envKey of [
     'RENDER_EXTERNAL_URL',
