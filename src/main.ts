@@ -10,13 +10,15 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const normalizeOrigin = (origin: string) => origin.replace(/\/+$/, '');
   const allowedOrigins = new Set([
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost:5174',
     'https://idyllic-fenglisu-b9c4a3.netlify.app',
-    'https://meek-babka-066a5b.netlify.app/',
-  ]);
+    'https://meek-babka-066a5b.netlify.app',
+    'https://tkhan.duckdns.org',
+  ].map(normalizeOrigin));
   for (const envKey of [
     'RENDER_EXTERNAL_URL',
     'PUBLIC_APP_URL',
@@ -25,7 +27,7 @@ async function bootstrap() {
   ]) {
     const value = process.env[envKey]?.trim();
     if (value) {
-      allowedOrigins.add(value);
+      allowedOrigins.add(normalizeOrigin(value));
     }
   }
   const tryCloudflarePattern = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i;
