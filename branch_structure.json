@@ -1,0 +1,18 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "arif",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "arif": "main",
+    "main": null,
+    "origin": "main"
+  },
+  "order": [
+    "main",
+    "arif",
+    "origin"
+  ]
+}
