@@ -22,9 +22,19 @@ export class UsersService {
   }
 
   async updateMe(userId: string, dto: UpdateProfileDto) {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { phone: true },
+    });
+    if (!existing) throw new NotFoundException('User not found');
+    const nextPhone = dto.phone !== undefined ? dto.phone : existing.phone;
+    const data: any = { ...dto };
+    if (!nextPhone?.trim()) {
+      data.sharePhoneWithBookingPartners = false;
+    }
     const user = await this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data,
     });
     return sanitizeUser(user);
   }

@@ -147,7 +147,15 @@ export const parseCertificationArray = (value: unknown) => {
 
 export class UpdateGroomerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() fullName?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() phone?: string;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  phone?: string | null;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  sharePhoneWithBookingPartners?: boolean;
   @ApiPropertyOptional({ type: 'string', format: 'binary' })
   @Transform(({ value }) => (value === '' ? undefined : value))
   @IsOptional()
@@ -156,11 +164,31 @@ export class UpdateGroomerProfileDto {
   @ApiPropertyOptional() @IsOptional() @IsString() businessName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() businessAddress?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() serviceArea?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() streetAddress?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() unitSuite?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() province?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  streetAddress?: string | null;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  unitSuite?: string | null;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  city?: string | null;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  province?: string | null;
+  @ApiPropertyOptional()
+  @Transform(({ value }) => (value === '' ? null : value))
+  @IsOptional()
+  @IsString()
+  postalCode?: string | null;
   @ApiPropertyOptional() @IsOptional() @IsString() shortBio?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() about?: string;
   @ApiPropertyOptional({ type: 'string', format: 'binary' })

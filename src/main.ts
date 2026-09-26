@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -9,16 +9,20 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
+  const logger = new Logger('Cors');
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  const normalizeOrigin = (origin: string) => origin.replace(/\/+$/, '');
   const allowedOrigins = new Set([
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost:5174',
     'https://idyllic-fenglisu-b9c4a3.netlify.app',
-    'https://meek-babka-066a5b.netlify.app/',
+    'https://meek-babka-066a5b.netlify.app',
     'https://tkhan.duckdns.org',
-  ]);
+    'https://api.karoot.ca',
+  ].map(normalizeOrigin));
   for (const envKey of [
+    'CORS_ORIGINS',
     'RENDER_EXTERNAL_URL',
     'PUBLIC_APP_URL',
     'APP_URL',
@@ -26,7 +30,11 @@ async function bootstrap() {
   ]) {
     const value = process.env[envKey]?.trim();
     if (value) {
-      allowedOrigins.add(value);
+      value
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+        .forEach((origin) => allowedOrigins.add(normalizeOrigin(origin)));
     }
   }
   const tryCloudflarePattern = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i;
@@ -42,7 +50,20 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+      const message = `CORS blocked for origin: ${origin}`;
+      logger.warn(
+        `${message}. Add it to CORS_ORIGINS or the static allowlist if this frontend should access the API.`,
+      );
+
+      return callback(
+        new ForbiddenException({
+          message,
+          reason: 'CORS_ORIGIN_BLOCKED',
+          origin,
+          allowedOrigins: Array.from(allowedOrigins),
+        }),
+        false,
+      );
     },
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],

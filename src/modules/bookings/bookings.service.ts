@@ -24,6 +24,7 @@ const bookingBuyerSelect = {
   fullName: true,
   email: true,
   phone: true,
+  sharePhoneWithBookingPartners: true,
   profileImage: true,
   streetAddress: true,
   unitSuite: true,
@@ -91,166 +92,174 @@ export class BookingsService {
   ) {}
 
   async create(buyerId: string, dto: CreateBookingDto) {
-    return this.prisma.$transaction(async (tx) => {
-      const pet = await tx.pet.findUnique({ where: { id: dto.petId } });
-      if (!pet) {
-        throw new NotFoundException('Selected pet was not found');
-      }
+    return this.prisma.$transaction(
+      async (tx) => {
+        const pet = await tx.pet.findUnique({ where: { id: dto.petId } });
+        if (!pet) {
+          throw new NotFoundException('Selected pet was not found');
+        }
 
-      const groomer = await tx.groomerProfile.findUnique({
-        where: { id: dto.groomerId },
-        include: { user: true },
-      });
-      if (!groomer) {
-        throw new NotFoundException('Selected groomer was not found');
-      }
+        const groomer = await tx.groomerProfile.findUnique({
+          where: { id: dto.groomerId },
+          include: { user: true },
+        });
+        if (!groomer) {
+          throw new NotFoundException('Selected groomer was not found');
+        }
 
-      const service = await tx.service.findUnique({
-        where: { id: dto.serviceId },
-        include: { category: true, addonMappings: true },
-      });
-      if (!service) {
-        throw new NotFoundException('Selected service was not found');
-      }
+        const service = await tx.service.findUnique({
+          where: { id: dto.serviceId },
+          include: { category: true, addonMappings: true },
+        });
+        if (!service) {
+          throw new NotFoundException('Selected service was not found');
+        }
 
-      const slot = await tx.groomerAvailabilitySlot.findUnique({
-        where: { id: dto.availabilitySlotId },
-        include: { availability: true },
-      });
-      if (!slot) {
-        throw new NotFoundException('Selected availability slot was not found');
-      }
+        const slot = await tx.groomerAvailabilitySlot.findUnique({
+          where: { id: dto.availabilitySlotId },
+          include: { availability: true },
+        });
+        if (!slot) {
+          throw new NotFoundException(
+            'Selected availability slot was not found',
+          );
+        }
 
-      if (pet.buyerId !== buyerId) {
-        throw new ForbiddenException(
-          'You can only create a booking with a pet from your own account',
+        if (pet.buyerId !== buyerId) {
+          throw new ForbiddenException(
+            'You can only create a booking with a pet from your own account',
+          );
+        }
+        if (groomer.user.isBlocked) {
+          throw new BadRequestException(
+            'This groomer account is blocked and cannot receive bookings',
+          );
+        }
+        if (groomer.approvalStatus !== 'APPROVED') {
+          throw new BadRequestException(
+            'This groomer is still waiting for admin approval',
+          );
+        }
+        if (!groomer.availableForBookings) {
+          throw new BadRequestException(
+            'This groomer has currently disabled booking availability',
+          );
+        }
+        this.payouts.assertGroomerPayoutSetupComplete(groomer);
+        if (service.groomerId !== groomer.id) {
+          throw new BadRequestException(
+            'Selected service does not belong to this groomer',
+          );
+        }
+        if (!service.active) {
+          throw new BadRequestException(
+            'Selected service is currently inactive',
+          );
+        }
+        if (slot.availability.groomerId !== groomer.id) {
+          throw new BadRequestException(
+            'Selected availability slot does not belong to this groomer',
+          );
+        }
+        if (!slot.availability.isAvailable) {
+          throw new BadRequestException(
+            'Selected availability date is currently unavailable',
+          );
+        }
+        if (slot.isBooked) {
+          throw new BadRequestException(
+            'Selected availability slot has already been booked',
+          );
+        }
+        const addons = dto.addonIds?.length
+          ? await tx.serviceAddon.findMany({
+              where: {
+                id: { in: dto.addonIds },
+                groomerId: groomer.id,
+                active: true,
+                serviceMappings: { some: { serviceId: service.id } },
+              },
+            })
+          : [];
+        if ((dto.addonIds?.length ?? 0) !== addons.length) {
+          throw new BadRequestException(
+            'One or more selected add-ons are invalid for this service',
+          );
+        }
+        if (this.isAtHomeBooking(dto.serviceLocation)) {
+          this.assertRequiredAddress(dto);
+        }
+        const pricing = await tx.platformSetting.findUnique({
+          where: { id: 'platform' },
+        });
+        const subtotal =
+          Number(service.price) +
+          addons.reduce((sum, addon) => sum + Number(addon.price), 0);
+        const serviceChargePercent = Number(pricing?.serviceChargeAmount ?? 0);
+        const serviceCharge = Number(
+          ((subtotal * serviceChargePercent) / 100).toFixed(2),
         );
-      }
-      if (groomer.user.isBlocked) {
-        throw new BadRequestException(
-          'This groomer account is blocked and cannot receive bookings',
-        );
-      }
-      if (groomer.approvalStatus !== 'APPROVED') {
-        throw new BadRequestException(
-          'This groomer is still waiting for admin approval',
-        );
-      }
-      if (!groomer.availableForBookings) {
-        throw new BadRequestException(
-          'This groomer has currently disabled booking availability',
-        );
-      }
-      this.payouts.assertGroomerPayoutSetupComplete(groomer);
-      if (service.groomerId !== groomer.id) {
-        throw new BadRequestException(
-          'Selected service does not belong to this groomer',
-        );
-      }
-      if (!service.active) {
-        throw new BadRequestException(
-          'Selected service is currently inactive',
-        );
-      }
-      if (slot.availability.groomerId !== groomer.id) {
-        throw new BadRequestException(
-          'Selected availability slot does not belong to this groomer',
-        );
-      }
-      if (!slot.availability.isAvailable) {
-        throw new BadRequestException(
-          'Selected availability date is currently unavailable',
-        );
-      }
-      if (slot.isBooked) {
-        throw new BadRequestException(
-          'Selected availability slot has already been booked',
-        );
-      }
-      const addons = dto.addonIds?.length
-        ? await tx.serviceAddon.findMany({
-            where: {
-              id: { in: dto.addonIds },
-              groomerId: groomer.id,
-              active: true,
-              serviceMappings: { some: { serviceId: service.id } },
+        const platformFee = serviceCharge;
+        const groomerEarning = Number(subtotal.toFixed(2));
+        const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
+        const booking = await tx.booking.create({
+          data: {
+            bookingNumber: 'BK-' + Date.now(),
+            buyerId,
+            groomerId: groomer.userId,
+            petId: dto.petId,
+            availabilitySlotId: slot.id,
+            serviceLocation: dto.serviceLocation,
+            addressLine: dto.addressLine?.trim() || null,
+            state: dto.state,
+            city: dto.city,
+            postalCode: dto.postalCode,
+            note: dto.note,
+            status: 'PENDING',
+            subtotalAmount: subtotal,
+            serviceChargeAmount: serviceCharge,
+            platformFeeAmount: platformFee,
+            groomerEarningAmount: groomerEarning,
+            totalAmount,
+            services: {
+              create: {
+                serviceId: service.id,
+                serviceTitle: service.title,
+                serviceDescription: service.description,
+                durationMinutes: service.durationMinutes,
+                price: service.price,
+                categoryName: service.category.name,
+              },
             },
-          })
-        : [];
-      if ((dto.addonIds?.length ?? 0) !== addons.length) {
-        throw new BadRequestException(
-          'One or more selected add-ons are invalid for this service',
-        );
-      }
-      const pricing = await tx.platformSetting.findUnique({
-        where: { id: 'platform' },
-      });
-      const subtotal =
-        Number(service.price) +
-        addons.reduce((sum, addon) => sum + Number(addon.price), 0);
-      const serviceChargePercent = Number(pricing?.serviceChargeAmount ?? 0);
-      const serviceCharge = Number(
-        ((subtotal * serviceChargePercent) / 100).toFixed(2),
-      );
-      const platformFee = serviceCharge;
-      const groomerEarning = Number(subtotal.toFixed(2));
-      const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
-      const booking = await tx.booking.create({
-        data: {
-          bookingNumber: 'BK-' + Date.now(),
-          buyerId,
-          groomerId: groomer.userId,
-          petId: dto.petId,
-          availabilitySlotId: slot.id,
-          serviceLocation: dto.serviceLocation,
-          addressLine: dto.addressLine,
-          state: dto.state,
-          city: dto.city,
-          postalCode: dto.postalCode,
-          note: dto.note,
-          status: 'PENDING',
-          subtotalAmount: subtotal,
-          serviceChargeAmount: serviceCharge,
-          platformFeeAmount: platformFee,
-          groomerEarningAmount: groomerEarning,
-          totalAmount,
-          services: {
-            create: {
-              serviceId: service.id,
-              serviceTitle: service.title,
-              serviceDescription: service.description,
-              durationMinutes: service.durationMinutes,
-              price: service.price,
-              categoryName: service.category.name,
+            addons: {
+              create: addons.map((addon) => ({
+                addonId: addon.id,
+                addonTitle: addon.title,
+                addonDescription: addon.description,
+                durationMinutes: addon.durationMinutes,
+                price: addon.price,
+              })),
+            },
+            payments: {
+              create: {
+                amount: totalAmount,
+                status: 'PAYMENT_PENDING',
+              },
             },
           },
-          addons: {
-            create: addons.map((addon) => ({
-              addonId: addon.id,
-              addonTitle: addon.title,
-              addonDescription: addon.description,
-              durationMinutes: addon.durationMinutes,
-              price: addon.price,
-            })),
-          },
-          payments: {
-            create: {
-              amount: totalAmount,
-              status: 'PAYMENT_PENDING',
-            },
-          },
-        },
-        include: { services: true, addons: true, payments: true },
-      });
-      await tx.groomerAvailabilitySlot.update({
-        where: { id: slot.id },
-        data: { isBooked: true },
-      });
-      return booking;
-    }, {
-      maxWait: 10000,
-      timeout: 20000,
-    });
+          include: { services: true, addons: true, payments: true },
+        });
+        await tx.groomerAvailabilitySlot.update({
+          where: { id: slot.id },
+          data: { isBooked: true },
+        });
+        return booking;
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      },
+    );
   }
 
   async listForUser(userId: string, role: string, dto: BookingQueryDto) {
@@ -295,8 +304,7 @@ export class BookingsService {
       });
     }
 
-    const where: any =
-      andConditions.length > 0 ? { AND: andConditions } : {};
+    const where: any = andConditions.length > 0 ? { AND: andConditions } : {};
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
@@ -317,7 +325,7 @@ export class BookingsService {
       this.prisma.booking.count({ where }),
     ]);
     return paginated(
-      items.map((booking) => this.withEarnings(booking)),
+      items.map((booking) => this.withEarnings(booking, userId)),
       total,
       dto.page,
       dto.limit,
@@ -345,10 +353,10 @@ export class BookingsService {
       booking.groomerId !== userId
     )
       throw new ForbiddenException('Booking access denied');
-    return this.withEarnings(booking);
+    return this.withEarnings(booking, userId);
   }
 
-  private withEarnings(booking: any) {
+  private withEarnings(booking: any, requesterId?: string) {
     const latestPayout = booking.payouts?.[0] ?? null;
     const scheduledDate = booking.availabilitySlot?.availability?.date ?? null;
     const payoutSummary = this.summarizePayout(latestPayout);
@@ -361,6 +369,18 @@ export class BookingsService {
       );
     return {
       ...booking,
+      buyer: this.withBookingPhonePrivacy(
+        booking.buyer,
+        booking,
+        requesterId,
+        'BUYER',
+      ),
+      groomer: this.withBookingPhonePrivacy(
+        booking.groomer,
+        booking,
+        requesterId,
+        'GROOMER',
+      ),
       isReviewed,
       scheduledDate,
       earnings: {
@@ -378,6 +398,54 @@ export class BookingsService {
         payoutTransferredAt: payoutSummary.transferredAt,
         payoutFailureReason: payoutSummary.failureReason,
       },
+    };
+  }
+
+  private isAtHomeBooking(serviceLocation: string) {
+    const normalized = serviceLocation.trim().toLowerCase();
+    return (
+      normalized === 'at-home grooming' ||
+      normalized === 'at home grooming' ||
+      normalized === 'at_home_grooming' ||
+      normalized.includes('home')
+    );
+  }
+
+  private assertRequiredAddress(dto: CreateBookingDto) {
+    if (
+      !dto.addressLine?.trim() ||
+      !dto.city?.trim() ||
+      !dto.postalCode?.trim()
+    ) {
+      throw new BadRequestException(
+        'Address line, city, and postal code are required for at-home bookings',
+      );
+    }
+  }
+
+  private withBookingPhonePrivacy(
+    user: any,
+    booking: any,
+    requesterId: string | undefined,
+    party: 'BUYER' | 'GROOMER',
+  ) {
+    if (!user) return user;
+    const { phone, sharePhoneWithBookingPartners, ...safeUser } = user;
+    const isCounterpart =
+      party === 'BUYER'
+        ? booking.groomerId === requesterId
+        : booking.buyerId === requesterId;
+    const phoneSharingAllowed = Boolean(
+      isCounterpart &&
+      ['ACCEPTED', 'IN_PROGRESS'].includes(booking.status) &&
+      sharePhoneWithBookingPartners &&
+      phone?.trim(),
+    );
+
+    return {
+      ...safeUser,
+      phoneSharingAllowed,
+      ...(phoneSharingAllowed ? { phoneNumber: phone } : {}),
     };
   }
 
@@ -430,9 +498,7 @@ export class BookingsService {
       orderBy: { createdAt: 'desc' },
     });
     if (!paidPayment) {
-      throw new BadRequestException(
-        'Buyer payment has not been completed yet',
-      );
+      throw new BadRequestException('Buyer payment has not been completed yet');
     }
     const updated = await this.prisma.booking.update({
       where: { id },
@@ -526,11 +592,7 @@ export class BookingsService {
     return this.payments.refundBooking(id, dto.reason, 'REJECTED');
   }
 
-  async markInProgress(
-    groomerId: string,
-    id: string,
-    beforeImage?: string,
-  ) {
+  async markInProgress(groomerId: string, id: string, beforeImage?: string) {
     const booking = await this.prisma.booking.findUniqueOrThrow({
       where: { id },
       include: { pet: true },
@@ -551,9 +613,12 @@ export class BookingsService {
         ...(beforeImage && { beforeImage }),
       },
     });
-    const notification = renderNotificationTemplate('BUYER_APPOINTMENT_STARTED', {
-      PetName: booking.pet.name,
-    });
+    const notification = renderNotificationTemplate(
+      'BUYER_APPOINTMENT_STARTED',
+      {
+        PetName: booking.pet.name,
+      },
+    );
     await this.notifications.create(
       updated.buyerId,
       'BOOKING_ACCEPTED',
@@ -681,7 +746,9 @@ export class BookingsService {
       },
     );
     await this.payouts.releaseForBooking(id);
-    const adminNotification = renderNotificationTemplate('ADMIN_BOOKING_COMPLETED');
+    const adminNotification = renderNotificationTemplate(
+      'ADMIN_BOOKING_COMPLETED',
+    );
     await this.notifications.createForAdmins(
       'BOOKING_COMPLETED',
       adminNotification.title,

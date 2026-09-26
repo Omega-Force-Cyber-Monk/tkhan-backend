@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { paginate, paginated } from '../../common/utils/pagination';
+import { sanitizePublicGroomer } from '../../common/utils/privacy';
 import {
   CategoryGroomerQueryDto,
   CategoryQueryDto,
@@ -90,7 +91,9 @@ export class CategoriesService {
           { about: { contains: search, mode: 'insensitive' } },
           { user: { fullName: { contains: search, mode: 'insensitive' } } },
           { user: { email: { contains: search, mode: 'insensitive' } } },
-          { user: { streetAddress: { contains: search, mode: 'insensitive' } } },
+          {
+            user: { streetAddress: { contains: search, mode: 'insensitive' } },
+          },
           { user: { city: { contains: search, mode: 'insensitive' } } },
           { user: { province: { contains: search, mode: 'insensitive' } } },
           { user: { postalCode: { contains: search, mode: 'insensitive' } } },
@@ -160,7 +163,7 @@ export class CategoriesService {
     const groomers = items.map((groomer) => {
       const prices = groomer.services.map((service) => Number(service.price));
       return {
-        ...groomer,
+        ...sanitizePublicGroomer(groomer),
         averageRating: ratingByUserId.get(groomer.userId) ?? 0,
         priceRange: prices.length
           ? { min: Math.min(...prices), max: Math.max(...prices) }

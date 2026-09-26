@@ -34,6 +34,11 @@ export class GroomerController {
       properties: {
         fullName: { type: 'string' },
         phone: { type: 'string' },
+        sharePhoneWithBookingPartners: {
+          type: 'boolean',
+          description:
+            'Allows the other booking party to see this phone number after booking acceptance/in progress. Automatically disabled if phone is empty.',
+        },
         streetAddress: {
           type: 'string',
           example: '123 Main Street',

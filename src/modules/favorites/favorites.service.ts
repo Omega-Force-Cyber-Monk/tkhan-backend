@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { sanitizePublicGroomer } from '../../common/utils/privacy';
 @Injectable()
 export class FavoritesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -29,11 +30,15 @@ export class FavoritesService {
     };
   }
 
-  list(buyerId: string) {
-    return this.prisma.buyerFavoriteGroomer.findMany({
+  async list(buyerId: string) {
+    const favorites = await this.prisma.buyerFavoriteGroomer.findMany({
       where: { buyerId },
       include: { groomer: { include: { user: true, services: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return favorites.map((favorite) => ({
+      ...favorite,
+      groomer: sanitizePublicGroomer(favorite.groomer),
+    }));
   }
 }

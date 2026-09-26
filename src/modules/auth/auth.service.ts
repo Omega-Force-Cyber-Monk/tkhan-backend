@@ -76,9 +76,7 @@ export class AuthService {
         typeof error.message === 'string'
           ? error.message
           : 'Failed to send verification OTP email';
-      throw new InternalServerErrorException(
-        message,
-      );
+      throw new InternalServerErrorException(message);
     }
     return {
       user: sanitizeUser(user),
@@ -92,6 +90,8 @@ export class AuthService {
     if (!dto.idFrontImage || !dto.idBackImage) {
       throw new BadRequestException('ID front and back images are required');
     }
+    const serviceModes = this.normalizeServiceModes(dto.serviceModes ?? []);
+    this.validateGroomerConditionalFields(dto, serviceModes);
     const password = await this.hash(dto.password);
     const user = await this.prisma.user.create({
       data: {
@@ -113,6 +113,8 @@ export class AuthService {
             legalFullName: dto.legalFullName,
             idNumber: dto.idNumber,
             idType: dto.idType,
+            isRegisteredBusiness: Boolean(dto.isRegisteredBusiness),
+            isGstRegistered: Boolean(dto.isGstRegistered),
             businessName: dto.businessName,
             serviceArea: dto.serviceArea,
             businessAddress: dto.businessAddress,
@@ -122,7 +124,7 @@ export class AuthService {
             idBackImage: dto.idBackImage,
             selfieWithId: dto.selfieWithId,
             certifications: (dto.certifications ?? []) as any,
-            serviceModes: dto.serviceModes ?? [],
+            serviceModes,
             approvalStatus: 'PENDING',
           },
         },
@@ -146,6 +148,50 @@ export class AuthService {
       user: sanitizeUser(user),
       message: 'Groomer registration submitted for admin approval.',
     };
+  }
+
+  private validateGroomerConditionalFields(
+    dto: RegisterGroomerDto,
+    serviceModes: string[],
+  ) {
+    if (dto.isRegisteredBusiness && !dto.businessName?.trim()) {
+      throw new BadRequestException(
+        'Business name is required for registered businesses',
+      );
+    }
+    if (dto.isGstRegistered && !dto.gstHstRegistrationNumber?.trim()) {
+      throw new BadRequestException(
+        'GST/HST registration number is required when GST/HST registered',
+      );
+    }
+    if (
+      serviceModes.includes('DROP_AT_STUDIO') &&
+      !dto.businessAddress?.trim()
+    ) {
+      throw new BadRequestException(
+        'Business address is required for Drop at Studio service mode',
+      );
+    }
+  }
+
+  private normalizeServiceModes(values: string[]) {
+    const normalized = values
+      .map((value) => value?.trim())
+      .filter(Boolean)
+      .map((value) => {
+        const key = value.toLowerCase().replace(/[_\s-]+/g, ' ');
+        if (key === 'at home grooming' || key === 'at home') {
+          return 'AT_HOME_GROOMING';
+        }
+        if (key === 'drop at studio' || key === 'studio') {
+          return 'DROP_AT_STUDIO';
+        }
+        if (key === 'meet at pet wash' || key === 'pet wash') {
+          return 'MEET_AT_PET_WASH';
+        }
+        return value.trim();
+      });
+    return [...new Set(normalized)];
   }
 
   async login(dto: LoginDto) {
@@ -274,9 +320,7 @@ export class AuthService {
       where: { email: dto.email?.toLowerCase() || '' },
     });
     if (!user || user.role !== 'BUYER') {
-      throw new BadRequestException(
-        'Invalid buyer email verification request',
-      );
+      throw new BadRequestException('Invalid buyer email verification request');
     }
     if (!user.emailVerificationToken) {
       throw new BadRequestException('Email already verified');
