@@ -3,16 +3,19 @@
   "branches": [
     "arif",
     "main",
+    "newArif",
     "origin"
   ],
   "parent": {
     "arif": "main",
     "main": null,
+    "newArif": "main",
     "origin": "main"
   },
   "order": [
     "main",
     "arif",
+    "newArif",
     "origin"
   ]
 }
