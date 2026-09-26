@@ -20,6 +20,7 @@ async function bootstrap() {
     'https://meek-babka-066a5b.netlify.app',
     'https://tkhan.duckdns.org',
     'https://api.karoot.ca',
+    'https://admin.karoot.ca',
   ].map(normalizeOrigin));
   for (const envKey of [
     'CORS_ORIGINS',
