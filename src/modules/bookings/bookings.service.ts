@@ -77,6 +77,8 @@ const bookingAvailabilitySlotInclude = {
   },
 };
 
+const PAYMENT_CURRENCY = 'cad';
+
 const bookingPayoutInclude = {
   orderBy: { createdAt: 'desc' as const },
 };
@@ -243,6 +245,7 @@ export class BookingsService {
             payments: {
               create: {
                 amount: totalAmount,
+                currency: PAYMENT_CURRENCY,
                 status: 'PAYMENT_PENDING',
               },
             },

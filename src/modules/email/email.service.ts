@@ -13,7 +13,7 @@ export class EmailService {
 
   async sendBuyerVerificationOtp(email: string, fullName: string, otp: string) {
     const transporter = this.createTransporter();
-    const fromName = this.config.get<string>('SMTP_FROM_NAME') || 'Tkhan';
+    const fromName = this.config.get<string>('SMTP_FROM_NAME') || 'Karoot';
     const fromEmail = this.config.get<string>('SMTP_FROM_EMAIL');
 
     if (!fromEmail) {

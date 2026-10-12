@@ -80,7 +80,7 @@ async function bootstrap() {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tkhan API</title>
+    <title>Karoot API</title>
     <style>
       :root {
         color-scheme: light;
@@ -158,7 +158,7 @@ async function bootstrap() {
   </head>
   <body>
     <main>
-      <h1>Tkhan API</h1>
+      <h1>Karoot API</h1>
       <p>Service marketplace backend is running. Open the interactive Swagger documentation to inspect and test endpoints.</p>
       <a href="/docs">Open Swagger Docs</a>
     </main>
@@ -178,7 +178,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
 
   const config = new DocumentBuilder()
-    .setTitle('Tkhan Service Marketplace API')
+    .setTitle('Karoot Service Marketplace API')
     .setDescription('Production-grade grooming marketplace backend')
     .setVersion('1.0.0')
     .addBearerAuth()

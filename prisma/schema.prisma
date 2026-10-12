@@ -511,7 +511,7 @@ model Payment {
   bookingId               String
   booking                 Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   amount                  Decimal       @db.Decimal(10, 2)
-  currency                String        @default("usd")
+  currency                String        @default("cad")
   status                  PaymentStatus @default(PAYMENT_PENDING)
   stripeCheckoutSessionId String?       @unique
   stripePaymentIntentId   String?       @unique
@@ -534,7 +534,7 @@ model Payout {
   groomer          GroomerProfile          @relation(fields: [groomerId], references: [id], onDelete: Cascade)
   amount           Decimal                 @db.Decimal(10, 2)
   platformFee      Decimal                 @db.Decimal(10, 2)
-  currency         String                  @default("usd")
+  currency         String                  @default("cad")
   status           PayoutStatus            @default(PENDING)
   stripeTransferId String?                 @unique
   transferredAt    DateTime?
@@ -573,7 +573,7 @@ model WithdrawalRequest {
   bankAccountId     String
   amountRequested   Decimal                 @db.Decimal(10, 2)
   amountPaid        Decimal?                @db.Decimal(10, 2)
-  currency          String                  @default("usd")
+  currency          String                  @default("cad")
   status            WithdrawalRequestStatus @default(REQUESTED)
   adminNote         String?
   transferReference String?

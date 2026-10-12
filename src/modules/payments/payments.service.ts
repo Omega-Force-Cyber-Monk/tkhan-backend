@@ -20,6 +20,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PaymentsService.name);
   private readonly stripe: any;
   private pendingRefundTimer?: NodeJS.Timeout;
+  private readonly currency = 'cad';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -69,6 +70,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         'Booking total amount is invalid for payment processing',
       );
     }
+    const targetCurrency = this.currency;
     const payment =
       (await this.prisma.payment.findFirst({
         where: {
@@ -83,10 +85,18 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         data: {
           bookingId,
           amount: booking.totalAmount,
-          currency: this.config.get('STRIPE_CURRENCY') ?? 'usd',
+          currency: targetCurrency,
           status: 'PAYMENT_PENDING',
         },
       }));
+
+    if (payment.currency !== targetCurrency && !payment.stripeChargeId) {
+      payment.currency = targetCurrency;
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { currency: targetCurrency },
+      });
+    }
 
     let intent: any;
     if (payment.stripePaymentIntentId) {
