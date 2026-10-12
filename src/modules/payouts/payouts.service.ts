@@ -66,6 +66,7 @@ type StripeWeeklyPayoutDay =
 export class PayoutsService {
   private readonly logger = new Logger(PayoutsService.name);
   private readonly stripe: any;
+  private readonly currency = 'cad';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -107,6 +108,9 @@ export class PayoutsService {
       throw new BadRequestException('Booking groomer profile not found');
     }
 
+    const payment = booking.payments[0];
+    const transferCurrency = this.currency;
+
     let payout = await this.prisma.payout.findUnique({
       where: { bookingId },
       include: payoutListInclude,
@@ -118,9 +122,15 @@ export class PayoutsService {
           groomerId: groomerProfile.id,
           amount: booking.groomerEarningAmount,
           platformFee: booking.platformFeeAmount,
-          currency: booking.payments[0]?.currency ?? 'usd',
+          currency: transferCurrency,
           status: 'PENDING',
         },
+        include: payoutListInclude,
+      });
+    } else if (payout.currency !== transferCurrency) {
+      payout = await this.prisma.payout.update({
+        where: { id: payout.id },
+        data: { currency: transferCurrency },
         include: payoutListInclude,
       });
     }
@@ -133,7 +143,6 @@ export class PayoutsService {
       return payout;
     }
 
-    const payment = booking.payments[0];
     if (!payment?.stripeChargeId) {
       const failed = await this.prisma.payout.update({
         where: { id: payout.id },
@@ -179,7 +188,7 @@ export class PayoutsService {
     try {
       const transfer = await this.stripe.transfers.create({
         amount: amountInCents,
-        currency: payout.currency,
+        currency: transferCurrency,
         destination: groomerProfile.stripeConnectedAccountId,
         source_transaction: payment.stripeChargeId,
         transfer_group: booking.bookingNumber,
