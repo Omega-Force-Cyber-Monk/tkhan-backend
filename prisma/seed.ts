@@ -72,7 +72,7 @@ function configuredAdmins(): AdminSeed[] {
     },
   ];
 
-  if (process.env.SEED_LEGACY_ADMIN !== 'false') {
+  if (process.env.SEED_LEGACY_ADMIN === 'true') {
     admins.push({
       fullName: 'Admin Roy Chowdhury',
       email: 'admin@gmail.com',

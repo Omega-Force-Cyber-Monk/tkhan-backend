@@ -52,7 +52,7 @@ export class DefaultUsersSeedService implements OnModuleInit {
       },
     ];
 
-    if (process.env.SEED_LEGACY_ADMIN !== 'false') {
+    if (process.env.SEED_LEGACY_ADMIN === 'true') {
       seeds.push({
         fullName: 'Legacy Platform Admin',
         email: 'admin@gmail.com',
@@ -75,7 +75,7 @@ export class DefaultUsersSeedService implements OnModuleInit {
     const email = seed.email.toLowerCase();
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
 
-    if (existingUser) {
+    if (existingUser && seed.role !== 'ADMIN') {
       return;
     }
 
@@ -83,6 +83,23 @@ export class DefaultUsersSeedService implements OnModuleInit {
       seed.password,
       Number(process.env.BCRYPT_ROUNDS ?? 12),
     );
+
+    if (existingUser && seed.role === 'ADMIN') {
+      await this.prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          fullName: seed.fullName,
+          phone: seed.phone,
+          password,
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          emailVerified: true,
+          isBlocked: false,
+        },
+      });
+      this.logger.log(`Updated default admin: ${email}`);
+      return;
+    }
 
     await this.prisma.user.create({
       data: {

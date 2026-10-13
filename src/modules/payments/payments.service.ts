@@ -138,7 +138,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       intent = await this.stripe.paymentIntents.create({
         amount: amountInCents,
         currency: payment.currency,
-        automatic_payment_methods: { enabled: true },
+        automatic_payment_methods: {
+          enabled: true,
+          allow_redirects: 'never',
+        },
         metadata: {
           bookingId,
           paymentId: payment.id,
