@@ -7,7 +7,7 @@ type DefaultUserSeed = {
   email: string;
   phone: string;
   password: string;
-  role: 'ADMIN' | 'BUYER' | 'GROOMER';
+  role: 'ADMIN';
 };
 
 @Injectable()
@@ -36,20 +36,6 @@ export class DefaultUsersSeedService implements OnModuleInit {
         password: process.env.ADMIN_PASSWORD || 'Admin@123456',
         role: 'ADMIN',
       },
-      {
-        fullName: 'Default Groomer',
-        email: 'gromer@gmail.com',
-        phone: '+10000000001',
-        password: '123456',
-        role: 'GROOMER',
-      },
-      {
-        fullName: 'Default Buyer',
-        email: 'buyer@gmail.com',
-        phone: '+10000000002',
-        password: '123456',
-        role: 'BUYER',
-      },
     ];
 
     if (process.env.SEED_LEGACY_ADMIN === 'true') {
@@ -75,16 +61,12 @@ export class DefaultUsersSeedService implements OnModuleInit {
     const email = seed.email.toLowerCase();
     const existingUser = await this.prisma.user.findUnique({ where: { email } });
 
-    if (existingUser && seed.role !== 'ADMIN') {
-      return;
-    }
-
     const password = await bcrypt.hash(
       seed.password,
       Number(process.env.BCRYPT_ROUNDS ?? 12),
     );
 
-    if (existingUser && seed.role === 'ADMIN') {
+    if (existingUser) {
       await this.prisma.user.update({
         where: { id: existingUser.id },
         data: {
@@ -110,35 +92,6 @@ export class DefaultUsersSeedService implements OnModuleInit {
         role: seed.role,
         status: 'ACTIVE',
         emailVerified: true,
-        ...(seed.role === 'BUYER'
-          ? {
-              buyerProfile: {
-                create: {},
-              },
-            }
-          : {}),
-        ...(seed.role === 'GROOMER'
-          ? {
-              groomerProfile: {
-                create: {
-                  experienceYears: 3,
-                  legalFullName: seed.fullName,
-                  idNumber: 'DEFAULT-GROOMER-ID',
-                  idType: 'PASSPORT',
-                  businessName: 'Default Groomer Business',
-                  serviceArea: 'Toronto',
-                  businessAddress: '123 Default Street, Toronto',
-                  idFrontImage:
-                    'https://res.cloudinary.com/demo/image/upload/sample.jpg',
-                  idBackImage:
-                    'https://res.cloudinary.com/demo/image/upload/sample.jpg',
-                  availableForBookings: true,
-                  approvalStatus: 'APPROVED',
-                  approvedAt: new Date(),
-                },
-              },
-            }
-          : {}),
       },
     });
 

@@ -419,7 +419,7 @@ async function seedDemoPayout() {
       where: { id: payment.id },
       data: {
         amount: 80,
-        currency: 'usd',
+        currency: 'cad',
         status: 'SUCCEEDED',
         paidAt: completedAt,
       },
@@ -429,7 +429,7 @@ async function seedDemoPayout() {
       data: {
         bookingId: booking.id,
         amount: 80,
-        currency: 'usd',
+        currency: 'cad',
         status: 'SUCCEEDED',
         paidAt: completedAt,
       },
@@ -446,7 +446,7 @@ async function seedDemoPayout() {
         groomerId: groomerUser.groomerProfile.id,
         amount: 72,
         platformFee: 8,
-        currency: 'usd',
+        currency: 'cad',
       },
     });
   } else {
@@ -456,7 +456,7 @@ async function seedDemoPayout() {
         groomerId: groomerUser.groomerProfile.id,
         amount: 72,
         platformFee: 8,
-        currency: 'usd',
+        currency: 'cad',
       },
     });
   }
@@ -469,9 +469,7 @@ async function main() {
     await seedAdmin(admin);
   }
 
-  const shouldSeedDemoUsers =
-    process.env.SEED_DEMO_USERS === 'true' ||
-    (!isHostedProduction && process.env.SEED_DEMO_USERS !== 'false');
+  const shouldSeedDemoUsers = process.env.SEED_DEMO_USERS === 'true';
 
   if (shouldSeedDemoUsers) {
     for (const user of [

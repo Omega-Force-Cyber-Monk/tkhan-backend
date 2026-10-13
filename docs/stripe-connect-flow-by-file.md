@@ -551,13 +551,9 @@ Important functions:
 
 What it does:
 
-- auto-creates `admin@gmail.com`, `gromer@gmail.com`, `buyer@gmail.com` if they do not already exist
-- default password is `123456`
-- existing users are not overwritten
-
-Important current caveat:
-
-- if `admin@gmail.com` already exists in DB, this service will not reset its password
+- creates or updates the configured admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD`
+- keeps the admin active, verified, and unblocked
+- buyer and groomer demo users are not created automatically
 
 ## 8. Error Normalization
 
