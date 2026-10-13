@@ -34,15 +34,14 @@ Important webhook note:
 
 If `account.updated` does not reach the backend, groomer `payoutSetupComplete` will stay `false` even if onboarding is finished in Stripe.
 
-## Useful Default Users
+## Useful Default Admin
 
-These users are auto-created on app boot if they do not already exist:
+The admin user is auto-created or updated on app boot from environment variables:
 
-- Admin: `admin@gmail.com` / `123456`
-- Groomer: `gromer@gmail.com` / `123456`
-- Buyer: `buyer@gmail.com` / `123456`
+- Email: `ADMIN_EMAIL`
+- Password: `ADMIN_PASSWORD`
 
-If you want to test the full registration flow, use fresh email addresses instead of these defaults.
+Buyer and groomer users are not auto-created for production. Use the registration flow with fresh email addresses when testing.
 
 ## IDs You Should Save While Testing
 

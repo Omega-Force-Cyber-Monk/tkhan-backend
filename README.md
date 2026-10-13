@@ -31,9 +31,7 @@ Seeded admin:
 
 The seed is safe to run more than once. It creates or repairs the configured
 admin as an active, verified, unblocked `ADMIN` user and also seeds service
-categories. By default it also keeps the legacy demo admin
-`admin@gmail.com` / `123456`; set `SEED_LEGACY_ADMIN=false` to skip that
-account.
+categories. Demo users are not seeded unless `SEED_DEMO_USERS=true` is set.
 
 ## Render Deploy
 
