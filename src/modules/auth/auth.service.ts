@@ -273,12 +273,13 @@ export class AuthService {
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
+    const message =
+      'If the email exists, password reset instructions have been sent.';
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
     });
-    if (!user)
-      return { message: 'If the email exists, a reset token was generated.' };
-    const token = randomBytes(32).toString('hex');
+    if (!user) return { message };
+    const token = this.generateOtp();
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
@@ -286,11 +287,12 @@ export class AuthService {
         passwordResetExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
     });
-    return {
-      message:
-        'Password reset token generated. Wire this to email in production.',
-      resetToken: token,
-    };
+    await this.emailService.sendPasswordResetToken(
+      user.email,
+      user.fullName,
+      token,
+    );
+    return { message };
   }
 
   async resetPassword(dto: ResetPasswordDto) {
@@ -302,7 +304,7 @@ export class AuthService {
         item.passwordResetTokenHash &&
         bcrypt.compareSync(dto.token, item.passwordResetTokenHash),
     );
-    if (!user) throw new BadRequestException('Invalid or expired reset token');
+    if (!user) throw new BadRequestException('Invalid or expired reset code');
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
