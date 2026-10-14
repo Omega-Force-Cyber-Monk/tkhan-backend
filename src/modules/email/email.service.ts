@@ -46,6 +46,45 @@ export class EmailService {
     }
   }
 
+  async sendPasswordResetToken(
+    email: string,
+    fullName: string,
+    code: string,
+  ) {
+    const transporter = this.createTransporter();
+    const fromName = this.config.get<string>('SMTP_FROM_NAME') || 'Karoot';
+    const fromEmail = this.config.get<string>('SMTP_FROM_EMAIL');
+
+    if (!fromEmail) {
+      throw new InternalServerErrorException(
+        'SMTP_FROM_EMAIL is not configured',
+      );
+    }
+
+    try {
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: email,
+        subject: 'Reset your Karoot password',
+        text: [
+          `Hi ${fullName},`,
+          '',
+          'Use this password reset code in the Karoot app:',
+          code,
+          '',
+          'This code will expire in 60 minutes.',
+          '',
+          'If you did not request this, please ignore this email.',
+        ].join('\n'),
+        html: this.renderPasswordResetEmail(fullName, code),
+      });
+    } catch (error) {
+      const host = this.config.get<string>('SMTP_HOST');
+      const port = Number(this.config.get<string>('SMTP_PORT') || 587);
+      throw this.toEmailDeliveryException(error, host, port);
+    }
+  }
+
   private createTransporter() {
     const host = this.config.get<string>('SMTP_HOST');
     const port = Number(this.config.get<string>('SMTP_PORT') || 587);
@@ -145,6 +184,88 @@ export class EmailService {
                   <tr>
                     <td align="center" style="font-size:14px;line-height:1.5;color:#5f687a;padding-bottom:22px;">
                       This code will expire in 10 minutes.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom:24px;font-family:Arial,Helvetica,sans-serif;">
+                      <div style="font-size:15px;line-height:1.4;font-weight:800;color:#d92d20;">Do not share this code with anyone.</div>
+                      <div style="font-size:13px;line-height:1.45;color:#d92d20;margin-top:4px;">Karoot will never ask for this code via phone or chat.</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="border-top:1px solid #d9dde5;padding-top:20px;text-align:center;font-size:13px;line-height:1.55;color:#4b566b;">
+                      <div>If you didn&apos;t request this email, you can safely ignore it.</div>
+                      <div>Need help? Contact us at <a href="mailto:${safeSupportEmail}" style="color:#ff4b1f;text-decoration:none;">${safeSupportEmail}</a></div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  }
+
+  private renderPasswordResetEmail(fullName: string, code: string) {
+    const safeName = this.escapeHtml(fullName);
+    const safeCode = this.escapeHtml(code);
+    const supportEmail =
+      this.config.get<string>('SUPPORT_EMAIL') ||
+      this.config.get<string>('SMTP_FROM_EMAIL') ||
+      'support@karoot.com';
+    const safeSupportEmail = this.escapeHtml(supportEmail);
+
+    return `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reset your password</title>
+  </head>
+  <body style="margin:0;padding:0;background:#fbf6ef;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#fbf6ef;margin:0;padding:22px 10px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;box-shadow:0 12px 30px rgba(24,33,52,0.08);">
+            <tr>
+              <td style="padding:28px 30px 26px;font-family:Arial,Helvetica,sans-serif;color:#1f2b44;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                  <tr>
+                    <td align="center" style="padding-bottom:28px;">
+                      <div style="font-size:32px;line-height:1;font-weight:900;color:#ff4b1f;letter-spacing:-1px;">Karoot</div>
+                      <div style="font-size:14px;line-height:1.4;color:#243149;margin-top:8px;">Connecting Pets With Trusted Care</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding-bottom:24px;">
+                      <div style="font-size:34px;line-height:1.08;font-weight:900;letter-spacing:-1px;color:#151515;">
+                        Reset Your <span style="color:#ff4b1f;">Password</span>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="font-size:16px;line-height:1.55;color:#243149;">
+                      <p style="margin:0 0 12px;font-weight:700;">Hi ${safeName},</p>
+                      <p style="margin:0 0 20px;">Use the password reset code below in the Karoot app to create a new password.</p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding:0 0 12px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:1px solid #ffc5b3;background:#fff7f2;border-radius:10px;">
+                        <tr>
+                          <td align="center" style="padding:18px 10px;font-family:Arial,Helvetica,sans-serif;font-size:38px;line-height:1;font-weight:900;letter-spacing:10px;color:#ff4b1f;">
+                            ${safeCode}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="font-size:14px;line-height:1.5;color:#5f687a;padding-bottom:22px;">
+                      This code will expire in 60 minutes.
                     </td>
                   </tr>
                   <tr>
