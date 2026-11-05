@@ -7,10 +7,10 @@
   "license": "UNLICENSED",
   "scripts": {
     "prebuild": "npm run prisma:generate",
-    "build": "node api.js && node init && nest build",
+    "build": "node init && nest build",
     "postbuild": "node -e \"require('fs').writeFileSync('dist/main.js', \\\"require('./src/main.js')\\\\n\\\")\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "node api.js && node init && node dist/src/main",
+    "start": "node init && node dist/src/main",
     "start:dev": "node init && nest start --watch",
     "start:debug": "node init && nest start --debug --watch",
     "start:prod": "node init && node dist/src/main",
