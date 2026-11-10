@@ -78,6 +78,12 @@ const bookingAvailabilitySlotInclude = {
 };
 
 const PAYMENT_CURRENCY = 'cad';
+const GROOMER_VISIBLE_PAYMENT_STATUSES = [
+  'SUCCEEDED',
+  'COMPLETED',
+  'REFUNDED',
+  'PARTIALLY_REFUNDED',
+] as const;
 
 const bookingPayoutInclude = {
   orderBy: { createdAt: 'desc' as const },
@@ -217,7 +223,7 @@ export class BookingsService {
             city: dto.city,
             postalCode: dto.postalCode,
             note: dto.note,
-            status: 'PENDING',
+            status: 'PAYMENT_PENDING',
             subtotalAmount: subtotal,
             serviceChargeAmount: serviceCharge,
             platformFeeAmount: platformFee,
@@ -252,10 +258,6 @@ export class BookingsService {
           },
           include: { services: true, addons: true, payments: true },
         });
-        await tx.groomerAvailabilitySlot.update({
-          where: { id: slot.id },
-          data: { isBooked: true },
-        });
         return booking;
       },
       {
@@ -276,6 +278,13 @@ export class BookingsService {
       andConditions.push({ buyerId: userId });
     } else if (role === 'GROOMER') {
       andConditions.push({ groomerId: userId });
+      andConditions.push({ status: { not: 'PAYMENT_PENDING' } });
+      andConditions.push({ requestedAt: { not: null } });
+      andConditions.push({
+        payments: {
+          some: { status: { in: [...GROOMER_VISIBLE_PAYMENT_STATUSES] } },
+        },
+      });
     }
 
     if (dto.status) {
@@ -356,6 +365,21 @@ export class BookingsService {
       booking.groomerId !== userId
     )
       throw new ForbiddenException('Booking access denied');
+    const hasSellerVisiblePayment = booking.payments.some((payment) =>
+      GROOMER_VISIBLE_PAYMENT_STATUSES.some(
+        (visibleStatus) => visibleStatus === payment.status,
+      ),
+    );
+    if (
+      role === 'GROOMER' &&
+      (booking.status === 'PAYMENT_PENDING' ||
+        !booking.requestedAt ||
+        !hasSellerVisiblePayment)
+    ) {
+      throw new ForbiddenException(
+        'Booking access is unavailable until buyer payment succeeds',
+      );
+    }
     return this.withEarnings(booking, userId);
   }
 

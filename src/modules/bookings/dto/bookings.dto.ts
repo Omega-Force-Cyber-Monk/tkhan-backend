@@ -26,6 +26,7 @@ const parseTodayFilter = (value: unknown) => {
 };
 
 export const BOOKING_STATUSES = [
+  'PAYMENT_PENDING',
   'PENDING',
   'REQUESTED',
   'ACCEPTED',

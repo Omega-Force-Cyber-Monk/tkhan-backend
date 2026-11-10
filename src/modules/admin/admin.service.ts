@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
@@ -13,6 +14,7 @@ import {
   AdminUserFilterDto,
   CreateAdminDto,
 } from './dto/admin.dto';
+import { EmailService } from '../email/email.service';
 
 const safeUserSelect = {
   id: true,
@@ -60,7 +62,12 @@ const bookingDetailInclude = {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailService: EmailService,
+  ) {}
 
   async users(dto: AdminUserFilterDto) {
     const where: any = {
@@ -243,6 +250,8 @@ export class AdminService {
   }
   async approveGroomer(adminId: string, groomerId: string) {
     const existingGroomer = await this.findGroomerByProfileOrUserId(groomerId);
+    const shouldSendApprovalEmail =
+      existingGroomer.approvalStatus !== 'APPROVED';
     const groomer = await this.prisma.groomerProfile.update({
       where: { id: existingGroomer.id },
       data: {
@@ -261,6 +270,20 @@ export class AdminService {
         action: 'GROOMER_APPROVED',
       },
     });
+    if (shouldSendApprovalEmail) {
+      try {
+        await this.emailService.sendGroomerApprovalEmail(
+          groomer.user.email,
+          groomer.user.fullName,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to send approval email to groomer ${groomer.userId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
     return groomer;
   }
   async rejectGroomer(adminId: string, groomerId: string, reason: string) {
@@ -367,7 +390,7 @@ export class AdminService {
       where: {
         OR: [{ id }, { userId: id }],
       },
-      select: { id: true },
+      select: { id: true, approvalStatus: true },
     });
     if (!groomer) throw new NotFoundException('Groomer not found');
     return groomer;

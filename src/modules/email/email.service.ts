@@ -46,11 +46,7 @@ export class EmailService {
     }
   }
 
-  async sendPasswordResetToken(
-    email: string,
-    fullName: string,
-    code: string,
-  ) {
+  async sendPasswordResetToken(email: string, fullName: string, code: string) {
     const transporter = this.createTransporter();
     const fromName = this.config.get<string>('SMTP_FROM_NAME') || 'Karoot';
     const fromEmail = this.config.get<string>('SMTP_FROM_EMAIL');
@@ -77,6 +73,39 @@ export class EmailService {
           'If you did not request this, please ignore this email.',
         ].join('\n'),
         html: this.renderPasswordResetEmail(fullName, code),
+      });
+    } catch (error) {
+      const host = this.config.get<string>('SMTP_HOST');
+      const port = Number(this.config.get<string>('SMTP_PORT') || 587);
+      throw this.toEmailDeliveryException(error, host, port);
+    }
+  }
+
+  async sendGroomerApprovalEmail(email: string, fullName: string) {
+    const transporter = this.createTransporter();
+    const fromName = this.config.get<string>('SMTP_FROM_NAME') || 'Karoot';
+    const fromEmail = this.config.get<string>('SMTP_FROM_EMAIL');
+
+    if (!fromEmail) {
+      throw new InternalServerErrorException(
+        'SMTP_FROM_EMAIL is not configured',
+      );
+    }
+
+    try {
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: email,
+        subject: 'Your Karoot groomer profile has been approved',
+        text: [
+          `Hi ${fullName},`,
+          '',
+          'Great news! Your Karoot groomer profile has been approved.',
+          'You can now log in to Karoot and continue setting up your services and availability.',
+          '',
+          'Welcome to Karoot!',
+        ].join('\n'),
+        html: this.renderGroomerApprovalEmail(fullName),
       });
     } catch (error) {
       const host = this.config.get<string>('SMTP_HOST');
@@ -281,6 +310,54 @@ export class EmailService {
                     </td>
                   </tr>
                 </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  }
+
+  private renderGroomerApprovalEmail(fullName: string) {
+    const safeName = this.escapeHtml(fullName);
+    const supportEmail =
+      this.config.get<string>('SUPPORT_EMAIL') ||
+      this.config.get<string>('SMTP_FROM_EMAIL') ||
+      'support@karoot.com';
+    const safeSupportEmail = this.escapeHtml(supportEmail);
+
+    return `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Your groomer profile is approved</title>
+  </head>
+  <body style="margin:0;padding:0;background:#fbf6ef;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#fbf6ef;margin:0;padding:22px 10px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;box-shadow:0 12px 30px rgba(24,33,52,0.08);">
+            <tr>
+              <td style="padding:28px 30px 26px;font-family:Arial,Helvetica,sans-serif;color:#1f2b44;">
+                <div style="text-align:center;font-size:32px;line-height:1;font-weight:900;color:#ff4b1f;letter-spacing:-1px;">Karoot</div>
+                <div style="text-align:center;font-size:14px;line-height:1.4;color:#243149;margin-top:8px;">Connecting Pets With Trusted Care</div>
+                <div style="text-align:center;font-size:34px;line-height:1.08;font-weight:900;letter-spacing:-1px;color:#151515;margin-top:28px;">
+                  Profile <span style="color:#ff4b1f;">Approved!</span>
+                </div>
+                <div style="font-size:16px;line-height:1.55;color:#243149;margin-top:24px;">
+                  <p style="margin:0 0 12px;font-weight:700;">Hi ${safeName},</p>
+                  <p style="margin:0 0 16px;">Great news! Your Karoot groomer profile has been approved.</p>
+                  <p style="margin:0 0 20px;">You can now log in to Karoot and continue setting up your services and availability.</p>
+                </div>
+                <div style="border:1px solid #ffc5b3;background:#fff7f2;border-radius:10px;padding:16px;text-align:center;font-size:16px;line-height:1.5;font-weight:700;color:#ff4b1f;">
+                  Welcome to the Karoot groomer community!
+                </div>
+                <div style="border-top:1px solid #d9dde5;margin-top:24px;padding-top:20px;text-align:center;font-size:13px;line-height:1.55;color:#4b566b;">
+                  Need help? Contact us at <a href="mailto:${safeSupportEmail}" style="color:#ff4b1f;text-decoration:none;">${safeSupportEmail}</a>
+                </div>
               </td>
             </tr>
           </table>

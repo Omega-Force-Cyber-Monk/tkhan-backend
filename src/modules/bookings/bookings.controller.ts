@@ -10,7 +10,10 @@ import {
   UploadedFiles,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import {
+  FileFieldsInterceptor,
+  FileInterceptor,
+} from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -163,6 +166,8 @@ const bookingExample = {
 
 const createdBookingExample = {
   ...bookingExample,
+  status: 'PAYMENT_PENDING',
+  requestedAt: null,
   pet: undefined,
   buyer: undefined,
   groomer: undefined,
@@ -308,14 +313,16 @@ export class BookingsController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     const afterImage = await this.uploads.uploadImage(file, 'tkhan/bookings');
-    return this.bookingsService.requestCompletion(user.sub, id, dto, afterImage);
+    return this.bookingsService.requestCompletion(
+      user.sub,
+      id,
+      dto,
+      afterImage,
+    );
   }
   @Roles('BUYER', 'ADMIN')
   @Patch(':id/approve-completion')
-  approveCompletion(
-    @CurrentUser() user: AuthUser,
-    @Param('id') id: string,
-  ) {
+  approveCompletion(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.bookingsService.approveCompletion(user.sub, user.role, id);
   }
   @Roles('GROOMER')

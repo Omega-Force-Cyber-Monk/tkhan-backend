@@ -15,6 +15,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { renderNotificationTemplate } from '../notifications/notification-templates';
 import { PayoutsService } from '../payouts/payouts.service';
 
+class SlotUnavailableAfterPaymentError extends Error {}
+
 @Injectable()
 export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PaymentsService.name);
@@ -126,10 +128,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
             data: { stripePaymentIntentId: null },
           });
         } else {
-          throw this.wrapStripeError(
-            'retrieve existing payment intent',
-            error,
-          );
+          throw this.wrapStripeError('retrieve existing payment intent', error);
         }
       }
     }
@@ -251,7 +250,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         payment.stripePaymentIntentId,
       );
     } catch (error) {
-      throw this.wrapStripeError('retrieve payment intent for confirmation', error);
+      throw this.wrapStripeError(
+        'retrieve payment intent for confirmation',
+        error,
+      );
     }
 
     if (intent.status === 'succeeded') {
@@ -317,23 +319,52 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       return existingPayment;
     }
 
-    const payment = await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: {
-        status: 'SUCCEEDED',
-        stripePaymentIntentId: paymentIntentId,
-        stripeChargeId: stripeChargeId ?? existingPayment.stripeChargeId,
-        paidAt: new Date(),
-      },
-      include: { booking: true },
-    });
-    const booking = await this.prisma.booking.update({
-      where: { id: payment.bookingId },
-      data: {
-        status: 'PENDING',
-        requestedAt: payment.booking.requestedAt ?? new Date(),
-      },
-    });
+    let payment: any;
+    let booking: any;
+    try {
+      ({ payment, booking } = await this.prisma.$transaction(async (tx) => {
+        if (
+          existingPayment.booking.status === 'PAYMENT_PENDING' &&
+          existingPayment.booking.availabilitySlotId
+        ) {
+          const claimedSlot = await tx.groomerAvailabilitySlot.updateMany({
+            where: {
+              id: existingPayment.booking.availabilitySlotId,
+              isBooked: false,
+            },
+            data: { isBooked: true },
+          });
+          if (claimedSlot.count !== 1) {
+            throw new SlotUnavailableAfterPaymentError();
+          }
+        }
+
+        const succeededPayment = await tx.payment.update({
+          where: { id: paymentId },
+          data: {
+            status: 'SUCCEEDED',
+            stripePaymentIntentId: paymentIntentId,
+            stripeChargeId: stripeChargeId ?? existingPayment.stripeChargeId,
+            paidAt: new Date(),
+          },
+          include: { booking: true },
+        });
+        const paidBooking = await tx.booking.update({
+          where: { id: succeededPayment.bookingId },
+          data: {
+            status: 'PENDING',
+            requestedAt: succeededPayment.booking.requestedAt ?? new Date(),
+          },
+        });
+        return { payment: succeededPayment, booking: paidBooking };
+      }));
+    } catch (error) {
+      if (!(error instanceof SlotUnavailableAfterPaymentError)) throw error;
+      return this.refundUnavailableSlotPayment(
+        existingPayment,
+        paymentIntentId,
+      );
+    }
     const [buyer, groomer] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: booking.buyerId },
@@ -396,6 +427,82 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       },
     );
     return payment;
+  }
+
+  private async refundUnavailableSlotPayment(
+    payment: any,
+    paymentIntentId: string,
+  ): Promise<never> {
+    let refund: any;
+    try {
+      refund = await this.stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        reason: 'requested_by_customer',
+        metadata: {
+          bookingId: payment.bookingId,
+          reason: 'Availability slot was taken before payment completed',
+        },
+      });
+    } catch (error) {
+      throw this.wrapStripeError(
+        'refund payment after availability slot became unavailable',
+        error,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'REFUNDED',
+          stripePaymentIntentId: paymentIntentId,
+          stripeRefundId: refund.id,
+          failureReason: 'Availability slot became unavailable',
+          paidAt: new Date(),
+          refundedAt: new Date(),
+        },
+      });
+      await tx.booking.update({
+        where: { id: payment.bookingId },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancellationReason:
+            'Availability slot became unavailable before payment completed',
+        },
+      });
+    });
+
+    const buyerNotification = renderNotificationTemplate('BUYER_REFUND_ISSUED');
+    await this.notifications.create(
+      payment.booking.buyerId,
+      'PAYMENT_REFUND',
+      buyerNotification.title,
+      buyerNotification.body,
+      {
+        targetScreen: 'booking_details',
+        bookingId: payment.bookingId,
+        paymentId: payment.id,
+        refundId: refund.id,
+      },
+    );
+    await this.notifications.createForAdmins(
+      'PAYMENT_REFUND',
+      'Paid booking slot became unavailable',
+      'The payment was refunded automatically before the booking was sent to the groomer.',
+      {
+        targetScreen: 'booking_details',
+        bookingId: payment.bookingId,
+        buyerId: payment.booking.buyerId,
+        groomerId: payment.booking.groomerId,
+        paymentId: payment.id,
+        refundId: refund.id,
+      },
+    );
+
+    throw new BadRequestException(
+      'The selected availability slot is no longer available. Your payment was refunded automatically.',
+    );
   }
 
   async refundBooking(
@@ -522,10 +629,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return stripeError.code === 'resource_missing';
   }
 
-  private async markPaymentFailed(
-    payment: any,
-    failureReason?: string | null,
-  ) {
+  private async markPaymentFailed(payment: any, failureReason?: string | null) {
     const shouldNotify = payment.status !== 'FAILED';
     const updated = await this.prisma.payment.update({
       where: { id: payment.id },
@@ -538,7 +642,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       return updated;
     }
 
-    const buyerNotification = renderNotificationTemplate('BUYER_PAYMENT_FAILED');
+    const buyerNotification = renderNotificationTemplate(
+      'BUYER_PAYMENT_FAILED',
+    );
     await this.notifications.create(
       payment.booking.buyerId,
       'PAYMENT_FAILED',
@@ -579,8 +685,6 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }`,
       error instanceof Error ? error.stack : undefined,
     );
-    return new BadGatewayException(
-      `Stripe failed to ${action}: ${message}`,
-    );
+    return new BadGatewayException(`Stripe failed to ${action}: ${message}`);
   }
 }
