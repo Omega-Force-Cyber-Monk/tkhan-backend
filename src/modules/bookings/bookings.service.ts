@@ -11,6 +11,8 @@ import { renderNotificationTemplate } from '../notifications/notification-templa
 import { ReviewReminderService } from '../notifications/review-reminder.service';
 import { PaymentsService } from '../payments/payments.service';
 import { PayoutsService } from '../payouts/payouts.service';
+import { MIN_CARD_CHARGE_CENTS } from '../payments/stripe-config';
+import { ConfigService } from '@nestjs/config';
 import {
   BookingDecisionDto,
   BookingQueryDto,
@@ -97,7 +99,17 @@ export class BookingsService {
     private readonly payments: PaymentsService,
     private readonly payouts: PayoutsService,
     private readonly reviewReminders: ReviewReminderService,
+    private readonly config?: ConfigService,
   ) {}
+
+  /** Set REQUIRE_BOOKING_TERMS_ACCEPTANCE=true once every app build sends acceptedTerms. */
+  private get requireTermsAcceptance() {
+    return (
+      String(this.config?.get('REQUIRE_BOOKING_TERMS_ACCEPTANCE') ?? 'false')
+        .trim()
+        .toLowerCase() === 'true'
+    );
+  }
 
   async create(buyerId: string, dto: CreateBookingDto) {
     return this.prisma.$transaction(
@@ -146,6 +158,11 @@ export class BookingsService {
         if (groomer.approvalStatus !== 'APPROVED') {
           throw new BadRequestException(
             'This groomer is still waiting for admin approval',
+          );
+        }
+        if (groomer.suspendedUntil && groomer.suspendedUntil > new Date()) {
+          throw new BadRequestException(
+            'This groomer is temporarily unavailable for new bookings',
           );
         }
         if (!groomer.availableForBookings) {
@@ -210,6 +227,16 @@ export class BookingsService {
         const platformFee = serviceCharge;
         const groomerEarning = Number(subtotal.toFixed(2));
         const totalAmount = Number((subtotal + serviceCharge).toFixed(2));
+        if (totalAmount > 0 && totalAmount < MIN_CARD_CHARGE_CENTS / 100) {
+          throw new BadRequestException(
+            `Card payments must be at least $${(MIN_CARD_CHARGE_CENTS / 100).toFixed(2)} CAD. This booking total is $${totalAmount.toFixed(2)}. Please add a service or contact the groomer.`,
+          );
+        }
+        if (!dto.acceptedTerms && this.requireTermsAcceptance) {
+          throw new BadRequestException(
+            'Please review your booking and accept the Terms & Conditions and Cancellation & Refund Policy before paying.',
+          );
+        }
         const booking = await tx.booking.create({
           data: {
             bookingNumber: 'BK-' + Date.now(),
@@ -223,6 +250,8 @@ export class BookingsService {
             city: dto.city,
             postalCode: dto.postalCode,
             note: dto.note,
+            termsAcceptedAt: dto.acceptedTerms ? new Date() : null,
+            termsVersion: dto.acceptedTerms ? (dto.termsVersion ?? null) : null,
             status: 'PAYMENT_PENDING',
             subtotalAmount: subtotal,
             serviceChargeAmount: serviceCharge,
