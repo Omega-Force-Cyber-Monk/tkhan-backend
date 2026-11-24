@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsArray, IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 const parseTodayFilter = (value: unknown) => {
@@ -68,6 +77,65 @@ export class CreateBookingDto {
   @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
+  @ApiPropertyOptional({
+    description:
+      'Buyer ticked "I have reviewed my booking details and agree to Karoot\'s Terms & Conditions and Cancellation & Refund Policy".',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acceptedTerms?: boolean;
+  @ApiPropertyOptional({ example: '2026-11' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  termsVersion?: string;
+}
+export class CancelBookingDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+export const ADMIN_REFUND_TYPES = [
+  'POLICY',
+  'FULL',
+  'PARTIAL',
+  'NONE',
+] as const;
+export class AdminCancelBookingDto {
+  @ApiProperty({
+    enum: ADMIN_REFUND_TYPES,
+    description:
+      'POLICY = apply the cancellation policy, FULL = 100% refund, PARTIAL = refund refundAmount, NONE = cancel without refund',
+  })
+  @IsIn([...ADMIN_REFUND_TYPES])
+  refundType: (typeof ADMIN_REFUND_TYPES)[number];
+  @ApiPropertyOptional({ description: 'Required for PARTIAL, in CAD' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  refundAmount?: number;
+  @ApiProperty() @IsString() @MaxLength(500) reason: string;
+  @ApiPropertyOptional({
+    description: 'Record a groomer no-show for this booking',
+  })
+  @IsOptional()
+  @IsBoolean()
+  recordGroomerNoShow?: boolean;
+}
+export class AdminRefundBookingDto {
+  @ApiProperty({ enum: ['FULL', 'PARTIAL'] })
+  @IsIn(['FULL', 'PARTIAL'])
+  refundType: 'FULL' | 'PARTIAL';
+  @ApiPropertyOptional({ description: 'Required for PARTIAL, in CAD' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  refundAmount?: number;
+  @ApiProperty() @IsString() @MaxLength(500) reason: string;
 }
 export class BookingQueryDto extends PaginationDto {
   @ApiPropertyOptional({

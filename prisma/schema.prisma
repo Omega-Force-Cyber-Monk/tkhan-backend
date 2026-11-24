@@ -46,6 +46,20 @@ enum BookingStatus {
   REFUNDED
 }
 
+enum BookingCancelledBy {
+  BUYER
+  GROOMER
+  ADMIN
+  SYSTEM
+}
+
+enum GroomerNoShowAction {
+  NONE
+  WARNING
+  SUSPENSION
+  BLOCK
+}
+
 enum BookingReminderKind {
   TWENTY_FOUR_HOURS
   ONE_HOUR
@@ -107,6 +121,7 @@ enum NotificationType {
   BOOKING_CREATED
   BOOKING_ACCEPTED
   BOOKING_REJECTED
+  BOOKING_CANCELLED
   COMPLETION_REQUESTED
   BOOKING_COMPLETED
   PAYMENT_SUCCESS
@@ -259,6 +274,10 @@ model GroomerProfile {
   rejectionReason             String?
   approvedAt                  DateTime?
   approvedById                String?
+  noShowCount                 Int                        @default(0)
+  lastNoShowAt                DateTime?
+  suspendedUntil              DateTime?
+  noShows                     GroomerNoShow[]
   services                    Service[]
   addons                      ServiceAddon[]
   availability                GroomerAvailability[]
@@ -436,6 +455,14 @@ model Booking {
   refundedAt            DateTime?
   rejectionReason       String?
   cancellationReason    String?
+  cancelledBy           BookingCancelledBy?
+  cancelledById         String?
+  isLateCancellation    Boolean                  @default(false)
+  refundPercent         Int?
+  refundAmount          Decimal?                 @db.Decimal(10, 2)
+  lateFeeAmount         Decimal?                 @db.Decimal(10, 2)
+  termsAcceptedAt       DateTime?
+  termsVersion          String?
   completionNote        String?
   beforeImage           String?
   afterImage            String?
@@ -447,6 +474,7 @@ model Booking {
   reminders             BookingReminder[]
   conversations         ChatConversation[]
   supportTickets        SupportTicket[]
+  groomerNoShows        GroomerNoShow[]
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt
 
@@ -517,6 +545,7 @@ model Payment {
   stripePaymentIntentId   String?       @unique
   stripeChargeId          String?       @unique
   stripeRefundId          String?
+  refundedAmount          Decimal?      @db.Decimal(10, 2)
   failureReason           String?
   paidAt                  DateTime?
   refundedAt              DateTime?
@@ -524,6 +553,21 @@ model Payment {
   updatedAt               DateTime      @updatedAt
 
   @@index([bookingId, status])
+}
+
+model GroomerNoShow {
+  id               String              @id @default(uuid())
+  groomerProfileId String
+  groomerProfile   GroomerProfile      @relation(fields: [groomerProfileId], references: [id], onDelete: Cascade)
+  bookingId        String
+  booking          Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  hoursBeforeStart Decimal             @db.Decimal(10, 2)
+  reason           String?
+  actionTaken      GroomerNoShowAction @default(NONE)
+  createdAt        DateTime            @default(now())
+
+  @@unique([bookingId])
+  @@index([groomerProfileId, createdAt])
 }
 
 model Payout {

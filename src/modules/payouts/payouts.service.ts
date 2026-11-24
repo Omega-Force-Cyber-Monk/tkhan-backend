@@ -11,6 +11,7 @@ import Stripe from 'stripe';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { renderNotificationTemplate } from '../notifications/notification-templates';
+import { resolveStripeConfig } from '../payments/stripe-config';
 
 const payoutListInclude = {
   booking: true,
@@ -73,9 +74,7 @@ export class PayoutsService {
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {
-    this.stripe = new Stripe(
-      this.config.getOrThrow<string>('STRIPE_SECRET_KEY'),
-    );
+    this.stripe = new Stripe(resolveStripeConfig(this.config).secretKey);
   }
 
   async releaseForBooking(bookingId: string) {
@@ -139,6 +138,15 @@ export class PayoutsService {
       return payout;
     }
 
+    if (Number(payout.amount) <= 0) {
+      // Free ($0) booking: there is nothing to transfer to Stripe.
+      return this.prisma.payout.update({
+        where: { id: payout.id },
+        data: { status: 'TRANSFERRED', transferredAt: new Date() },
+        include: payoutListInclude,
+      });
+    }
+
     if (!this.isConnectReady(groomerProfile)) {
       return payout;
     }
@@ -148,7 +156,8 @@ export class PayoutsService {
         where: { id: payout.id },
         data: {
           status: 'FAILED',
-          failureReason: 'Stripe charge reference not found for payout transfer',
+          failureReason:
+            'Stripe charge reference not found for payout transfer',
         },
         include: payoutListInclude,
       });
@@ -275,7 +284,9 @@ export class PayoutsService {
         },
       );
 
-      const adminNotification = renderNotificationTemplate('ADMIN_PAYOUT_FAILED');
+      const adminNotification = renderNotificationTemplate(
+        'ADMIN_PAYOUT_FAILED',
+      );
       await this.notifications.createForAdmins(
         'ADMIN_ACTION',
         adminNotification.title,
@@ -386,7 +397,9 @@ export class PayoutsService {
 
     return {
       totalEarned,
-      availableBalance: Number((pendingTransfer + failedTransferTotal).toFixed(2)),
+      availableBalance: Number(
+        (pendingTransfer + failedTransferTotal).toFixed(2),
+      ),
       pendingWithdrawal: pendingTransfer,
       paidOutTotal: transferredTotal,
       pendingTransferTotal: pendingTransfer,
@@ -514,11 +527,10 @@ export class PayoutsService {
       where: { id: groomer.id },
       data: {
         stripeOnboardingCompleted: Boolean(account.details_submitted),
-        stripeTransfersEnabled:
-          account.capabilities?.transfers === 'active',
+        stripeTransfersEnabled: account.capabilities?.transfers === 'active',
         stripePayoutsEnabled: Boolean(account.payouts_enabled),
         stripeOnboardingCompletedAt: account.details_submitted
-          ? groomer.stripeOnboardingCompletedAt ?? new Date()
+          ? (groomer.stripeOnboardingCompletedAt ?? new Date())
           : null,
         stripeConnectCountry: account.country ?? groomer.stripeConnectCountry,
         stripeConnectEmail: account.email ?? groomer.stripeConnectEmail,
@@ -760,9 +772,9 @@ export class PayoutsService {
   }) {
     return Boolean(
       groomer.stripeConnectedAccountId &&
-        groomer.stripeOnboardingCompleted &&
-        groomer.stripeTransfersEnabled &&
-        groomer.stripePayoutsEnabled,
+      groomer.stripeOnboardingCompleted &&
+      groomer.stripeTransfersEnabled &&
+      groomer.stripePayoutsEnabled,
     );
   }
 

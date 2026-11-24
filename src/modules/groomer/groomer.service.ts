@@ -98,6 +98,8 @@ export class GroomerService {
       completedBookings,
       cancelledBookings,
       averageRating: ratingAgg._avg.rating ?? 0,
+      noShowCount: groomer.noShowCount,
+      suspendedUntil: groomer.suspendedUntil,
       connectStatus: await this.payouts.connectStatus(userId),
     };
   }
@@ -118,6 +120,11 @@ export class GroomerService {
     });
     if (groomer.approvalStatus !== 'APPROVED') {
       throw new BadRequestException('Groomer approval required');
+    }
+    if (groomer.suspendedUntil && groomer.suspendedUntil > new Date()) {
+      throw new BadRequestException(
+        `Your account is suspended from new bookings until ${groomer.suspendedUntil.toISOString().slice(0, 10)} because of repeated late cancellations (No-Shows). Contact support if you think this is a mistake.`,
+      );
     }
     this.payouts.assertGroomerPayoutSetupComplete(groomer);
     if (groomer._count.services === 0) {
