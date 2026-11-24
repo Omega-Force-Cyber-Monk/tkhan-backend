@@ -14,6 +14,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { renderNotificationTemplate } from '../notifications/notification-templates';
 import { PayoutsService } from '../payouts/payouts.service';
+import {
+  MIN_CARD_CHARGE_CENTS,
+  StripeRuntimeConfig,
+  resolveStripeConfig,
+} from './stripe-config';
 
 class SlotUnavailableAfterPaymentError extends Error {}
 
@@ -23,6 +28,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private readonly stripe: any;
   private pendingRefundTimer?: NodeJS.Timeout;
   private readonly currency = 'cad';
+  private readonly stripeConfig: StripeRuntimeConfig;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,9 +36,19 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
     private readonly payouts: PayoutsService,
   ) {
-    this.stripe = new Stripe(
-      this.config.getOrThrow<string>('STRIPE_SECRET_KEY'),
-    );
+    this.stripeConfig = resolveStripeConfig(this.config);
+    this.stripe = new Stripe(this.stripeConfig.secretKey);
+    this.logger.log(`Stripe gateway running in ${this.stripeConfig.mode} mode`);
+  }
+
+  /** Public, non-secret gateway info for the mobile app. */
+  getClientConfig() {
+    return {
+      mode: this.stripeConfig.mode,
+      livemode: this.stripeConfig.mode === 'live',
+      publishableKey: this.stripeConfig.publishableKey,
+      currency: this.currency,
+    };
   }
 
   onModuleInit() {
@@ -67,9 +83,19 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       );
     }
     const amountInCents = Math.round(Number(booking.totalAmount) * 100);
-    if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
-      throw new InternalServerErrorException(
-        'Booking total amount is invalid for payment processing',
+    if (!Number.isFinite(amountInCents) || amountInCents < 0) {
+      throw new BadRequestException(
+        'This booking has an invalid total amount, so it cannot be paid. Please contact support.',
+      );
+    }
+    if (amountInCents === 0) {
+      // Nothing to charge: Stripe cannot create a $0 PaymentIntent, so a free
+      // booking is confirmed directly instead of failing at the card step.
+      return this.completeFreeBooking(bookingId);
+    }
+    if (amountInCents < MIN_CARD_CHARGE_CENTS) {
+      throw new BadRequestException(
+        `Card payments must be at least $${(MIN_CARD_CHARGE_CENTS / 100).toFixed(2)} CAD. This booking total is $${(amountInCents / 100).toFixed(2)}. Please add a service or contact support.`,
       );
     }
     const targetCurrency = this.currency;
@@ -111,6 +137,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           existingIntent.client_secret
         ) {
           return {
+            ...this.getClientConfig(),
+            requiresPayment: true,
             paymentId: payment.id,
             paymentIntentId: existingIntent.id,
             clientSecret: existingIntent.client_secret,
@@ -159,11 +187,47 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       data: { stripePaymentIntentId: intent.id },
     });
     return {
+      ...this.getClientConfig(),
+      requiresPayment: true,
       paymentId: payment.id,
       paymentIntentId: intent.id,
       clientSecret: intent.client_secret,
       amount: payment.amount,
       currency: payment.currency,
+    };
+  }
+
+  /**
+   * Confirms a booking whose total is $0 without touching Stripe.
+   */
+  private async completeFreeBooking(bookingId: string) {
+    const payment =
+      (await this.prisma.payment.findFirst({
+        where: {
+          bookingId,
+          status: {
+            in: ['PAYMENT_PENDING', 'PENDING', 'FAILED', 'REQUIRES_ACTION'],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })) ??
+      (await this.prisma.payment.create({
+        data: {
+          bookingId,
+          amount: 0,
+          currency: this.currency,
+          status: 'PAYMENT_PENDING',
+        },
+      }));
+    const confirmed = await this.markPaymentSucceeded(payment.id, null, null);
+    return {
+      ...this.getClientConfig(),
+      requiresPayment: false,
+      paymentId: confirmed.id,
+      paymentIntentId: null,
+      clientSecret: null,
+      amount: confirmed.amount,
+      currency: confirmed.currency,
     };
   }
 
@@ -300,7 +364,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   async markPaymentSucceeded(
     paymentId: string,
-    paymentIntentId: string,
+    paymentIntentId: string | null,
     stripeChargeId?: string | null,
   ) {
     const existingPayment = await this.prisma.payment.findUnique({
@@ -317,6 +381,20 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     }
     if (existingPayment.status === 'SUCCEEDED') {
       return existingPayment;
+    }
+
+    if (
+      paymentIntentId &&
+      ['CANCELLED', 'REJECTED', 'REFUNDED'].includes(
+        existingPayment.booking.status,
+      )
+    ) {
+      // The buyer cancelled while the card payment was still in flight.
+      return this.refundUnavailableSlotPayment(
+        existingPayment,
+        paymentIntentId,
+        'Booking was cancelled before the payment completed',
+      );
     }
 
     let payment: any;
@@ -360,6 +438,22 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       }));
     } catch (error) {
       if (!(error instanceof SlotUnavailableAfterPaymentError)) throw error;
+      if (!paymentIntentId) {
+        // Free booking: nothing was charged, just release the booking.
+        await this.prisma.booking.update({
+          where: { id: existingPayment.bookingId },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledBy: 'SYSTEM',
+            cancellationReason:
+              'Availability slot became unavailable before the booking was confirmed',
+          },
+        });
+        throw new BadRequestException(
+          'The selected time slot is no longer available. Please choose another time.',
+        );
+      }
       return this.refundUnavailableSlotPayment(
         existingPayment,
         paymentIntentId,
@@ -432,6 +526,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private async refundUnavailableSlotPayment(
     payment: any,
     paymentIntentId: string,
+    reasonOverride?: string,
   ): Promise<never> {
     let refund: any;
     try {
@@ -440,7 +535,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         reason: 'requested_by_customer',
         metadata: {
           bookingId: payment.bookingId,
-          reason: 'Availability slot was taken before payment completed',
+          reason:
+            reasonOverride ??
+            'Availability slot was taken before payment completed',
         },
       });
     } catch (error) {
@@ -457,7 +554,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           status: 'REFUNDED',
           stripePaymentIntentId: paymentIntentId,
           stripeRefundId: refund.id,
-          failureReason: 'Availability slot became unavailable',
+          failureReason:
+            reasonOverride ?? 'Availability slot became unavailable',
+          refundedAmount: payment.amount,
           paidAt: new Date(),
           refundedAt: new Date(),
         },
@@ -466,9 +565,14 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         where: { id: payment.bookingId },
         data: {
           status: 'CANCELLED',
-          cancelledAt: new Date(),
+          cancelledAt: payment.booking.cancelledAt ?? new Date(),
           cancellationReason:
+            payment.booking.cancellationReason ??
+            reasonOverride ??
             'Availability slot became unavailable before payment completed',
+          refundPercent: 100,
+          refundAmount: payment.amount,
+          lateFeeAmount: 0,
         },
       });
     });
@@ -501,7 +605,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     );
 
     throw new BadRequestException(
-      'The selected availability slot is no longer available. Your payment was refunded automatically.',
+      reasonOverride
+        ? 'This booking was cancelled, so your payment was refunded automatically.'
+        : 'The selected availability slot is no longer available. Your payment was refunded automatically.',
     );
   }
 
@@ -532,6 +638,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         data: {
           status: 'REFUNDED',
           stripeRefundId: refund?.id,
+          refundedAmount: payment.amount,
           refundedAt: new Date(),
         },
       });
@@ -539,6 +646,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         where: { id: bookingId },
         data: {
           status: bookingStatus,
+          refundPercent: 100,
+          refundAmount: payment.amount,
+          lateFeeAmount: 0,
           ...(bookingStatus === 'REFUNDED' && { refundedAt: new Date() }),
         },
       });
@@ -586,6 +696,56 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       },
     );
     return { refundId: refund?.id, booking };
+  }
+
+  /**
+   * Issues a (full or partial) Stripe refund for a booking payment.
+   * The idempotency key makes retries safe: Stripe never refunds twice for
+   * the same key.
+   */
+  async issueStripeRefund(params: {
+    paymentIntentId: string;
+    amountInCents: number;
+    idempotencyKey: string;
+    metadata: Record<string, string>;
+  }) {
+    try {
+      return await this.stripe.refunds.create(
+        {
+          payment_intent: params.paymentIntentId,
+          amount: params.amountInCents,
+          reason: 'requested_by_customer',
+          metadata: params.metadata,
+        },
+        { idempotencyKey: params.idempotencyKey },
+      );
+    } catch (error) {
+      throw this.wrapStripeError('refund the booking payment', error);
+    }
+  }
+
+  /** Cancels an unpaid PaymentIntent so it can no longer be charged. */
+  async cancelOpenPaymentIntent(paymentIntentId: string) {
+    try {
+      const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+      if (
+        [
+          'requires_payment_method',
+          'requires_confirmation',
+          'requires_action',
+        ].includes(intent.status)
+      ) {
+        await this.stripe.paymentIntents.cancel(paymentIntentId);
+      }
+      return intent.status as string;
+    } catch (error) {
+      this.logger.warn(
+        `Could not cancel PaymentIntent ${paymentIntentId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return null;
+    }
   }
 
   async refundExpiredPendingBookings() {

@@ -54,3 +54,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 /generated/prisma
 config.bat
+
+# editor config (was used to auto-run malicious tasks)
+.vscode/

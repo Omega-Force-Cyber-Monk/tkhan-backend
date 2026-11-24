@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Headers,
-  Param,
-  Post,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Headers, Param, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -15,6 +9,12 @@ import { PaymentsService } from './payments.service';
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
+  /** Which Stripe environment (test/live) this backend is wired to. */
+  @Public()
+  @Get('config')
+  config() {
+    return this.paymentsService.getClientConfig();
+  }
   @ApiBearerAuth()
   @Roles('BUYER')
   @Post('bookings/:bookingId/payment-intent')
